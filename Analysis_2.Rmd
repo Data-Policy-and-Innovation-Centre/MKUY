@@ -1,0 +1,2813 @@
+---
+title: "MKUY Analysis One"
+author: "Sanchit"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+---
+
+
+
+
+
+
+
+
+
+
+## Visualising Process Delays 
+
+#Plot 1: Funnel: Days between stages for all relevant stages (Completed projects)  
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+## Data frame and funnel plot
+
+
+# Define the time difference variables
+time_diff_vars <- c("days_reg_blo", "days_blo_dno", "days_dno_collector",
+               "days_collector_apicoldm", "days_apicoldm_goahead", "days_goahead_complete",
+               "days_complete_blo_inspect", "days_blo_inspect_dno_comp", "days_dno_comp_admin",
+               "days_admin_src", "days_src_subsidy")
+
+# Filter out negative values and complete == 1 before calculating summary statistics
+filtered_df <- df_clean %>%
+  filter(completion == 1) %>%
+  mutate(across(all_of(time_diff_vars), ~ ifelse(. < 0, NA, .)))
+
+summary_stats <- data.frame(
+  Variable = time_diff_vars,
+  Mean = sapply(filtered_df[, time_diff_vars], function(x) round(mean(x, na.rm = TRUE), 0)),
+  Median = sapply(filtered_df[, time_diff_vars], function(x) round(median(x, na.rm = TRUE), 0)),
+  Min = sapply(filtered_df[, time_diff_vars], function(x) round(min(x, na.rm = TRUE), 0)),
+  Max = sapply(filtered_df[, time_diff_vars], function(x) round(max(x, na.rm = TRUE), 0))
+)
+
+# Print the resulting dataframe
+print(summary_stats)
+
+
+
+
+# Gather data for plotting, excluding negative values
+plot_data <- filtered_df %>%
+  select(all_of(time_diff_vars)) %>%
+  pivot_longer(everything(), names_to = "Stage", values_to = "Days") %>%
+  filter(!is.na(Days))
+
+# Set factor levels for Stage to match the order of time_diff_vars
+plot_data$Stage <- factor(plot_data$Stage, levels = time_diff_vars)
+
+# Funnel plot
+ggplot(plot_data, aes(x = Stage, y = Days)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  labs(title = "Funnel Plot of Time Differences between all relevant stages (Completed Projects)",
+       x = "Stages",
+       y = "Days") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+
+
+
+
+
+
+
+
+## Range Plot: Days between two stages for all relevant stages (for completed projects)
+
+specified_values <- c(7, 8, 30, 7, NA, NA, 7, 36, 30, 7, 7)
+
+# Filter out negative values and complete == 1 before calculating summary statistics
+filtered_df <- df_clean %>%
+  filter(complete == 1) %>%
+  mutate(across(all_of(time_diff_vars), ~ ifelse(. < 0, NA, .)))
+
+# Calculate summary statistics for filtered data
+summary_stats_filtered <- data.frame(
+  variable = time_diff_vars,
+  min = sapply(filtered_df[, time_diff_vars], min, na.rm = TRUE),
+  max = sapply(filtered_df[, time_diff_vars], max, na.rm = TRUE),
+  median = sapply(filtered_df[, time_diff_vars], median, na.rm = TRUE),
+  mean = sapply(filtered_df[, time_diff_vars], mean, na.rm = TRUE)
+)
+
+# Reshape summary_stats_filtered for plotting
+summary_stats_filtered_long <- summary_stats_filtered %>%
+  pivot_longer(cols = min:mean, names_to = "statistic", values_to = "value")
+
+# Create a dataframe for the line ranges (min and max) and points (median and mean)
+summary_ranges <- summary_stats_filtered_long %>%
+  filter(statistic %in% c("min", "max")) %>%
+  pivot_wider(names_from = statistic, values_from = value)
+
+summary_points <- summary_stats_filtered_long %>%
+  filter(statistic %in% c("median", "mean"))
+
+# Create a dataframe for the specified points
+specified_points <- data.frame(
+  variable = time_diff_vars,
+  specified_value = specified_values
+)
+
+# Set factor levels for the variable column to match the order in specified_points
+order_vars <- specified_points$variable
+summary_ranges$variable <- factor(summary_ranges$variable, levels = order_vars)
+summary_points$variable <- factor(summary_points$variable, levels = order_vars)
+specified_points$variable <- factor(specified_points$variable, levels = order_vars)
+
+# Plot using ggplot2 with horizontal line range graph and labels
+ggplot() +
+  geom_linerange(data = summary_ranges, aes(y = variable, xmin = min, xmax = max),
+                 size = 5, color = "gray", alpha = 0.8) +
+  geom_point(data = summary_points, aes(y = variable, x = value, color = statistic, shape = statistic),
+             size = 4) +
+  geom_point(data = specified_points, aes(y = variable, x = specified_value, color = "Guidelines threshold", shape = "Guidelines threshold"),
+             size = 4) +
+  geom_text(data = summary_points %>% filter(statistic == "mean"), aes(y = variable, x = value, label = round(value)),
+            hjust = -0.3, vjust = -0.5, color = "#D62728", size = 3.5) +
+  geom_text(data = summary_points %>% filter(statistic == "median"), aes(y = variable, x = value, label = round(value)),
+            hjust = -0.3, vjust = 1.5, color = "#2CA02C", size = 3.5) +
+  geom_text(data = summary_ranges, aes(y = variable, x = max, label = round(max)),
+            hjust = -0.3, vjust = -0.5, color = "black", size = 3.5) +
+  geom_text(data = specified_points, aes(y = variable, x = specified_value, label = specified_value),
+            hjust = 1.3, vjust = -0.5, color = "blue", size = 3.5) +
+  scale_shape_manual(values = c("median" = 16, "mean" = 17, "Guidelines threshold" = 18)) +
+  scale_color_manual(values = c("median" = "#2CA02C", "mean" = "#D62728", "Guidelines threshold" = "blue")) +
+  labs(y = "Stages", x = "Days", title = "Range plot for days between all relevant stages (Completed Projects)") +
+  theme_classic(base_size = 14) +  # Using theme_classic with a larger base font size
+  theme(
+    axis.text.y = element_text(color = "black", size = 12),
+    axis.text.x = element_text(color = "black", size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12)
+  ) +
+  guides(
+    color = guide_legend(title = NULL),
+    shape = guide_legend(title = NULL)
+  )
+```
+
+
+#Plot 2: Funnel: Days between stages for all relevant stages (All projects)
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Data frame and funnel plot
+
+
+# Define the time difference variables
+time_diff_vars <- c("days_reg_blo", "days_blo_dno", "days_dno_collector",
+               "days_collector_apicoldm", "days_apicoldm_goahead", "days_goahead_complete",
+               "days_complete_blo_inspect", "days_blo_inspect_dno_comp", "days_dno_comp_admin",
+               "days_admin_src", "days_src_subsidy")
+
+# Filter out negative values and complete == 1 before calculating summary statistics
+filtered_df <- df_clean %>%
+  mutate(across(all_of(time_diff_vars), ~ ifelse(. < 0, NA, .)))
+
+summary_stats <- data.frame(
+  Variable = time_diff_vars,
+  Mean = sapply(filtered_df[, time_diff_vars], function(x) round(mean(x, na.rm = TRUE), 0)),
+  Median = sapply(filtered_df[, time_diff_vars], function(x) round(median(x, na.rm = TRUE), 0)),
+  Min = sapply(filtered_df[, time_diff_vars], function(x) round(min(x, na.rm = TRUE), 0)),
+  Max = sapply(filtered_df[, time_diff_vars], function(x) round(max(x, na.rm = TRUE), 0))
+)
+
+# Print the resulting dataframe
+print(summary_stats)
+
+# Gather data for plotting, excluding negative values
+plot_data <- filtered_df %>%
+  select(all_of(time_diff_vars)) %>%
+  pivot_longer(everything(), names_to = "Stage", values_to = "Days") %>%
+  filter(!is.na(Days))
+
+# Set factor levels for Stage to match the order of time_diff_vars
+plot_data$Stage <- factor(plot_data$Stage, levels = time_diff_vars)
+
+# Funnel plot
+ggplot(plot_data, aes(x = Stage, y = Days)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  labs(title = "Funnel Plot of Time Differences Between Stages (All Projects)",
+       x = "Stages",
+       y = "Days") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+
+
+
+
+## Range Plot: Days between two stages for all relevant stages (for all projects)
+
+specified_values <- c(7, 8, 30, 7, NA, NA, 7, 36, 30, 7, 7)
+
+# Filter out negative values and complete == 1 before calculating summary statistics
+filtered_df <- df_clean %>%
+  mutate(across(all_of(time_diff_vars), ~ ifelse(. < 0, NA, .)))
+
+# Calculate summary statistics for filtered data
+summary_stats_filtered <- data.frame(
+  variable = time_diff_vars,
+  min = sapply(filtered_df[, time_diff_vars], min, na.rm = TRUE),
+  max = sapply(filtered_df[, time_diff_vars], max, na.rm = TRUE),
+  median = sapply(filtered_df[, time_diff_vars], median, na.rm = TRUE),
+  mean = sapply(filtered_df[, time_diff_vars], mean, na.rm = TRUE)
+)
+
+# Reshape summary_stats_filtered for plotting
+summary_stats_filtered_long <- summary_stats_filtered %>%
+  pivot_longer(cols = min:mean, names_to = "statistic", values_to = "value")
+
+# Create a dataframe for the line ranges (min and max) and points (median and mean)
+summary_ranges <- summary_stats_filtered_long %>%
+  filter(statistic %in% c("min", "max")) %>%
+  pivot_wider(names_from = statistic, values_from = value)
+
+summary_points <- summary_stats_filtered_long %>%
+  filter(statistic %in% c("median", "mean"))
+
+# Create a dataframe for the specified points
+specified_points <- data.frame(
+  variable = time_diff_vars,
+  specified_value = specified_values
+)
+
+# Set factor levels for the variable column to match the order in specified_points
+order_vars <- specified_points$variable
+summary_ranges$variable <- factor(summary_ranges$variable, levels = order_vars)
+summary_points$variable <- factor(summary_points$variable, levels = order_vars)
+specified_points$variable <- factor(specified_points$variable, levels = order_vars)
+
+# Plot using ggplot2 with horizontal line range graph and labels
+ggplot() +
+  geom_linerange(data = summary_ranges, aes(y = variable, xmin = min, xmax = max),
+                 size = 5, color = "gray", alpha = 0.8) +
+  geom_point(data = summary_points, aes(y = variable, x = value, color = statistic, shape = statistic),
+             size = 4) +
+  geom_point(data = specified_points, aes(y = variable, x = specified_value, color = "Guidelines threshold", shape = "Guidelines threshold"),
+             size = 4) +
+  geom_text(data = summary_points %>% filter(statistic == "mean"), aes(y = variable, x = value, label = round(value)),
+            hjust = -0.3, color = "#D62728", size = 3.5) +
+  geom_text(data = summary_ranges, aes(y = variable, x = max, label = round(max)),
+            hjust = -0.3, color = "black", size = 3.5) +
+  geom_text(data = specified_points, aes(y = variable, x = specified_value, label = specified_value),
+            hjust = 1.3, color = "blue", size = 3.5) +
+  scale_shape_manual(values = c("median" = 16, "mean" = 17, "Guidelines threshold" = 18)) +
+  scale_color_manual(values = c("median" = "#2CA02C", "mean" = "#D62728", "Guidelines threshold" = "blue")) +
+  labs(y = "Stages", x = "Days", title = "Number of Days Between Major Stages (All projects)") +
+  theme_classic(base_size = 14) +  # Using theme_classic with a larger base font size
+  theme(
+    axis.text.y = element_text(color = "black", size = 12),
+    axis.text.x = element_text(color = "black", size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12)
+  ) +
+  guides(
+    color = guide_legend(title = NULL),
+    shape = guide_legend(title = NULL)
+  )
+```
+
+
+#Plot 3: Funnel: Days between stages for major stages (Completed projects)
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Data frame and funnel plot
+
+
+# Define the time difference variables
+time_diff_vars <- c("days_reg_goahead", "days_goahead_complete", "days_complete_src", 
+                    "days_src_subsidy")
+
+# Filter out negative values and complete == 1 before calculating summary statistics
+filtered_df <- df_clean %>%
+  filter(completion == 1) %>%
+  mutate(across(all_of(time_diff_vars), ~ ifelse(. < 0, NA, .)))
+
+summary_stats <- data.frame(
+  Variable = time_diff_vars,
+  Mean = sapply(filtered_df[, time_diff_vars], function(x) round(mean(x, na.rm = TRUE), 0)),
+  Median = sapply(filtered_df[, time_diff_vars], function(x) round(median(x, na.rm = TRUE), 0)),
+  Min = sapply(filtered_df[, time_diff_vars], function(x) round(min(x, na.rm = TRUE), 0)),
+  Max = sapply(filtered_df[, time_diff_vars], function(x) round(max(x, na.rm = TRUE), 0))
+)
+
+# Print the resulting dataframe
+print(summary_stats)
+
+# Gather data for plotting, excluding negative values
+plot_data <- filtered_df %>%
+  select(all_of(time_diff_vars)) %>%
+  pivot_longer(everything(), names_to = "Stage", values_to = "Days") %>%
+  filter(!is.na(Days))
+
+# Set factor levels for Stage to match the order of time_diff_vars
+plot_data$Stage <- factor(plot_data$Stage, levels = time_diff_vars)
+
+# Funnel plot
+ggplot(plot_data, aes(x = Stage, y = Days)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  labs(title = "Funnel Plot of Time Differences between major stages (Completed Projects)",
+       x = "Stages",
+       y = "Days") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+
+
+
+
+
+
+
+
+## Range Plot: Days between two stages for all relevant stages (for completed projects)
+
+specified_values <- c(52, 730, 80, 7)
+
+# Filter out negative values and complete == 1 before calculating summary statistics
+filtered_df <- df_clean %>%
+  filter(completion == 1) %>%
+  mutate(across(all_of(time_diff_vars), ~ ifelse(. < 0, NA, .)))
+
+# Calculate summary statistics for filtered data
+summary_stats_filtered <- data.frame(
+  variable = time_diff_vars,
+  min = sapply(filtered_df[, time_diff_vars], min, na.rm = TRUE),
+  max = sapply(filtered_df[, time_diff_vars], max, na.rm = TRUE),
+  median = sapply(filtered_df[, time_diff_vars], median, na.rm = TRUE),
+  mean = sapply(filtered_df[, time_diff_vars], mean, na.rm = TRUE)
+)
+
+# Reshape summary_stats_filtered for plotting
+summary_stats_filtered_long <- summary_stats_filtered %>%
+  pivot_longer(cols = min:mean, names_to = "statistic", values_to = "value")
+
+# Create a dataframe for the line ranges (min and max) and points (median and mean)
+summary_ranges <- summary_stats_filtered_long %>%
+  filter(statistic %in% c("min", "max")) %>%
+  pivot_wider(names_from = statistic, values_from = value)
+
+summary_points <- summary_stats_filtered_long %>%
+  filter(statistic %in% c("median", "mean"))
+
+# Create a dataframe for the specified points
+specified_points <- data.frame(
+  variable = time_diff_vars,
+  specified_value = specified_values
+)
+
+# Set factor levels for the variable column to match the order in specified_points
+order_vars <- specified_points$variable
+summary_ranges$variable <- factor(summary_ranges$variable, levels = order_vars)
+summary_points$variable <- factor(summary_points$variable, levels = order_vars)
+specified_points$variable <- factor(specified_points$variable, levels = order_vars)
+
+# Plot using ggplot2 with horizontal line range graph and labels
+ggplot() +
+  geom_linerange(data = summary_ranges, aes(y = variable, xmin = min, xmax = max),
+                 size = 5, color = "gray", alpha = 0.8) +
+  geom_point(data = summary_points, aes(y = variable, x = value, color = statistic, shape = statistic),
+             size = 4) +
+  geom_point(data = specified_points, aes(y = variable, x = specified_value, color = "Guidelines threshold", shape = "Guidelines threshold"),
+             size = 4) +
+  geom_text(data = summary_points %>% filter(statistic == "mean"), aes(y = variable, x = value, label = round(value)),
+            hjust = -0.3, vjust = -0.5, color = "#D62728", size = 3.5) +
+  geom_text(data = summary_points %>% filter(statistic == "median"), aes(y = variable, x = value, label = round(value)),
+            hjust = -0.3, vjust = 1.5, color = "#2CA02C", size = 3.5) +
+  geom_text(data = summary_ranges, aes(y = variable, x = max, label = round(max)),
+            hjust = -0.3, vjust = -0.5, color = "black", size = 3.5) +
+  geom_text(data = specified_points, aes(y = variable, x = specified_value, label = specified_value),
+            hjust = 1.3, vjust = -0.5, color = "blue", size = 3.5) +
+  scale_shape_manual(values = c("median" = 16, "mean" = 17, "Guidelines threshold" = 18)) +
+  scale_color_manual(values = c("median" = "#2CA02C", "mean" = "#D62728", "Guidelines threshold" = "blue")) +
+  labs(y = "Stages", x = "Days", title = "Range plot for days between major stages (Completed Projects)") +
+  theme_classic(base_size = 14) +  # Using theme_classic with a larger base font size
+  theme(
+    axis.text.y = element_text(color = "black", size = 12),
+    axis.text.x = element_text(color = "black", size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12)
+  ) +
+  guides(
+    color = guide_legend(title = NULL),
+    shape = guide_legend(title = NULL)
+  )
+
+```
+
+
+
+#Plot 3c: Applications within and beyond specified time (major stages)
+```{r}
+# Initialize an empty data frame for the summary
+df_summary <- data.frame(variable = character(), category = character(), count = integer(), percentage = numeric(), stringsAsFactors = FALSE)
+
+# Loop over each variable and specified value to calculate the count and percentage
+for (i in seq_along(time_diff_vars)) {
+  var <- time_diff_vars[i]
+  threshold <- specified_values[i]
+  
+  # Filter the data to include only observations where 'completion' is 1
+  df_filtered <- df_clean %>% filter(completion == 1)
+  
+  # Count the number of applications above and below the specified value
+  count_above <- df_filtered %>% filter(!is.na(!!sym(var)) & !!sym(var) > threshold) %>% nrow()
+  count_below <- df_filtered %>% filter(!is.na(!!sym(var)) & !!sym(var) <= threshold) %>% nrow()
+  total_count <- df_filtered %>% filter(!is.na(!!sym(var))) %>% nrow()
+  
+  # Calculate percentages based on total count for each variable
+  percentage_above <- (count_above / total_count) * 100
+  percentage_below <- (count_below / total_count) * 100
+  
+  # Add to the summary data frame
+  df_summary <- rbind(df_summary, data.frame(variable = var, category = "Beyond specified time", count = count_above, percentage = percentage_above, stringsAsFactors = FALSE))
+  df_summary <- rbind(df_summary, data.frame(variable = var, category = "Within specified time", count = count_below, percentage = percentage_below, stringsAsFactors = FALSE))
+}
+
+# Convert variable column to a factor with levels in the order of time_diff_vars
+df_summary$variable <- factor(df_summary$variable, levels = time_diff_vars)
+
+# Define custom y-axis labels
+custom_y_labels <- c(
+  "days_reg_goahead" = "Registration",
+  "days_goahead_complete" = "Completion",
+  "days_complete_src" = "Inspection",
+  "days_src_subsidy" = "Subsidy Release"
+)
+
+print(df_summary)
+
+plot_3c_df <- "C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Excel Tables\\Plot_3c_df.xlsx"
+
+# Export the data frame to Excel
+write_xlsx(df_summary, path = plot_3c_df)
+
+
+
+# Create the stacked bar plot with custom y-axis labels and data labels
+plot_3c <- ggplot(df_summary, aes(x = variable, y = count, fill = category)) +
+  geom_bar(stat = "identity", width = 0.6) +  # Adjust the width here for thinner bars
+  geom_text(aes(label = paste0(count, " (", round(percentage, 1), "%)")), position = position_stack(vjust = 0.5), size = 3.5) +
+  scale_x_discrete(labels = custom_y_labels) +  # Use custom labels on the x-axis
+  labs(title = "Projects completed within and beyond specified time",
+       x = "Stages",
+       y = "Count of Applications",
+       fill = "Category") +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+# Print the plot
+print(plot_3c)
+
+# Save the plot
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_3c.png", 
+       plot = plot_3c, width = 12, height = 10, dpi = 300)
+
+```
+
+
+#Plot 4: Funnel: Days between stages for major stages (All projects)
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+## Data frame and funnel plot
+
+
+# Define the time difference variables
+time_diff_vars <- c("days_reg_goahead", "days_goahead_complete", "days_complete_src", 
+                    "days_src_subsidy")
+
+# Filter out negative values and complete == 1 before calculating summary statistics
+filtered_df <- df_clean %>%
+  mutate(across(all_of(time_diff_vars), ~ ifelse(. < 0, NA, .)))
+
+summary_stats <- data.frame(
+  Variable = time_diff_vars,
+  Mean = sapply(filtered_df[, time_diff_vars], function(x) round(mean(x, na.rm = TRUE), 0)),
+  Median = sapply(filtered_df[, time_diff_vars], function(x) round(median(x, na.rm = TRUE), 0)),
+  Min = sapply(filtered_df[, time_diff_vars], function(x) round(min(x, na.rm = TRUE), 0)),
+  Max = sapply(filtered_df[, time_diff_vars], function(x) round(max(x, na.rm = TRUE), 0))
+)
+
+# Print the resulting dataframe
+print(summary_stats)
+
+# Gather data for plotting, excluding negative values
+plot_data <- filtered_df %>%
+  select(all_of(time_diff_vars)) %>%
+  pivot_longer(everything(), names_to = "Stage", values_to = "Days") %>%
+  filter(!is.na(Days))
+
+# Set factor levels for Stage to match the order of time_diff_vars
+plot_data$Stage <- factor(plot_data$Stage, levels = time_diff_vars)
+
+# Funnel plot
+ggplot(plot_data, aes(x = Stage, y = Days)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  labs(title = "Funnel Plot of Time Differences Between Stages (All Projects)",
+       x = "Stages",
+       y = "Days") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot_4b_df <- "C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Excel Tables\\Plot_4b_df.xlsx"
+
+# Export the data frame to Excel
+write_xlsx(summary_stats, path = plot_4b_df)
+```
+
+
+#Plot 4b: Range Plot: Days between two stages for major stages (for all projects)
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Filter out 'mean' from summary_points
+summary_points_filtered <- summary_points %>%
+  filter(statistic != "mean")
+
+# Define custom y-axis labels
+custom_y_labels <- c(
+  "days_reg_goahead" = "Registration",
+  "days_goahead_complete" = "Completion",
+  "days_complete_src" = "Inspection",
+  "days_src_subsidy" = "Subsidy Release"
+)
+
+# Plot using ggplot2 with horizontal line range graph and labels
+plot_4b <- ggplot() +
+  geom_linerange(data = summary_ranges, aes(y = variable, xmin = min, xmax = max),
+                 size = 7, color = "gray", alpha = 0.8) +  # Increased line width
+  geom_point(data = summary_points_filtered, aes(y = variable, x = value, color = statistic, shape = statistic),
+             size = 6) +  # Increased marker size
+  geom_point(data = specified_points, aes(y = variable, x = specified_value, color = "Guidelines threshold", shape = "Guidelines threshold"),
+             size = 6) +  # Increased marker size
+  geom_text(data = summary_ranges, aes(y = variable, x = max, label = round(max)),
+            hjust = -0.3, color = "black", size = 3.5) +
+  geom_text(data = specified_points, aes(y = variable, x = specified_value, label = specified_value),
+            hjust = 1.3, color = "blue", size = 3.5) +
+  geom_text(data = summary_points_filtered %>% filter(statistic == "median"), 
+            aes(y = variable, x = value, label = round(value)),
+            vjust = -1, color = "#2CA02C", size = 3.5) +  # Add labels above median points
+  scale_shape_manual(values = c("median" = 16, "Guidelines threshold" = 18)) +
+  scale_color_manual(values = c("median" = "#2CA02C", "Guidelines threshold" = "blue")) +
+  labs(y = "Stages", x = "Number of Days", title = "Number of Days Between Major Stages (All Projects)") +
+  scale_y_discrete(labels = custom_y_labels) +  # Custom y-axis labels
+  theme_classic(base_size = 12) +  # Using theme_classic with a larger base font size
+  theme(
+    axis.text.y = element_text(color = "black", size = 12),
+    axis.text.x = element_text(color = "black", size = 12),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12)
+  ) +
+  guides(
+    color = guide_legend(title = NULL),
+    shape = guide_legend(title = NULL)
+  )
+plot_4b
+# Save the plot
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_4b.png", 
+       plot = plot_4b, width = 12, height = 10, dpi = 300)
+
+```
+
+
+
+
+
+
+#Plot 5: Project Sizes by Mode of Finance
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Create project_cost_range based on the specified ranges
+df_clean <- df_clean %>%
+  mutate(
+    project_cost_range = cut(project_cost,
+                             breaks = c(0, 2500000, 5000000, 10000000, Inf),
+                             labels = c("Below 25 lakhs", "25-50 lakhs", "50 lakhs-1 crore", "Above 1 crore"),
+                             right = FALSE)
+  )
+
+# Filter out NA values and create a data frame with counts of mode_of_finance within each project_cost_range
+df_summary <- df_clean %>%
+  filter(!is.na(project_cost_range) & !is.na(mode_of_finance)) %>%
+  count(project_cost_range, mode_of_finance) %>%
+  group_by(project_cost_range) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(percentage = n / total * 100) %>%
+  arrange(project_cost_range)  # Ensure the order of project_cost_range
+
+# Plot 100% stacked bar plot with percentages and count labels
+ggplot(df_summary, aes(x = project_cost_range, y = n, fill = mode_of_finance)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_brewer(palette = "Set3") +  # Lighter colors
+  geom_text(aes(label = paste0(n, " (", round(percentage, 1), "%)")),
+            position = position_fill(vjust = 0.5),
+            size = 3.5) +  # Smaller font for labels
+  labs(title = "Distribution of Mode of Finance by Project Cost Range",
+       x = "Project Cost Range",
+       y = "Proportion",
+       fill = "Mode of Finance") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = 8),  # Horizontal labels with smaller font
+        legend.text = element_text(size = 8),
+        axis.title = element_text(size = 10),
+        plot.title = element_text(size = 12))
+
+```
+
+
+
+
+
+
+#Table 1: Summary stats of days variables
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Define the time difference variables and specified values
+time_diff_vars <- c("days_reg_blo", "days_blo_dno", "days_dno_collector", 
+                    "days_collector_goahead", "days_goahead_sanction", "Days_sanction_complete",
+                    "days_complete_blo_inspect", "days_blo_inspect_dno_comp", "days_dno_comp_admin", 
+                    "days_admin_src", "days_src_subsidy")
+
+spec_values <- c(7, 8, 30, 7, 730, 730, 7, 36, 30, 7, 7)
+
+# Filter out negative values and complete == 1 before calculating summary statistics
+filtered_df <- df_clean %>%
+  filter(complete == 1) %>%
+  mutate(across(all_of(time_diff_vars), ~ ifelse(. < 0, NA, .)))
+
+# Calculate mean for each variable
+mean_stats <- filtered_df %>%
+  summarise(across(all_of(time_diff_vars), ~ round(mean(., na.rm = TRUE), 0))) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "mean")
+
+# Calculate median for each variable
+median_stats <- filtered_df %>%
+  summarise(across(all_of(time_diff_vars), ~ round(median(., na.rm = TRUE), 0))) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "median")
+
+# Calculate min for each variable
+min_stats <- filtered_df %>%
+  summarise(across(all_of(time_diff_vars), ~ round(min(., na.rm = TRUE), 0))) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "min")
+
+# Calculate max for each variable
+max_stats <- filtered_df %>%
+  summarise(across(all_of(time_diff_vars), ~ round(max(., na.rm = TRUE), 0))) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "max")
+
+# Combine all statistics into a single dataframe
+summary_stats_wide <- mean_stats %>%
+  left_join(median_stats, by = "Variable") %>%
+  left_join(min_stats, by = "Variable") %>%
+  left_join(max_stats, by = "Variable")
+
+# Add the specified values as a new column
+summary_stats_wide <- summary_stats_wide %>%
+  mutate(specified_value = spec_values)
+
+print(summary_stats_wide)
+```
+
+#Table 2: District-wise count of completed projects
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Filter for completed projects
+completed_projects <- df_clean %>%
+  filter(complete == 1)
+
+# Count completed projects by district and project sector
+district_sector_counts <- completed_projects %>%
+  group_by(district, project_sector) %>%
+  summarize(completed_count = n(), .groups = 'drop')
+
+# Count total completed projects by district
+district_totals <- completed_projects %>%
+  group_by(district) %>%
+  summarize(total_completed = n(), .groups = 'drop')
+
+# Merge the total completed projects with the district and project sector counts
+summary_df <- district_sector_counts %>%
+  left_join(district_totals, by = "district") %>%
+  pivot_wider(names_from = project_sector, values_from = completed_count, values_fill = 0) %>%
+  arrange(district)
+
+# Add percentage labels
+summary_df_with_labels <- summary_df %>%
+  mutate(across(-c(district, total_completed), ~paste0(., " (", round(. / total_completed * 100, 1), "%)")))
+
+# Add the row for Odisha with totals
+odisha_totals <- summary_df %>%
+  summarize(across(where(is.numeric), sum, na.rm = TRUE)) %>%
+  mutate(district = "Odisha")
+
+# Combine the district-level and Odisha totals into one data frame
+final_summary_df <- summary_df %>%
+  arrange(desc(total_completed)) %>%
+  bind_rows(odisha_totals)
+
+# Add percentage labels to the final summary data frame
+final_summary_df_with_labels <- final_summary_df %>%
+  mutate(across(-c(district, total_completed), ~ifelse(district == "Odisha", paste0(., " (100%)"), paste0(., " (", round(. / total_completed * 100, 1), "%)"))))
+
+# Print the final summary data frame with labels
+print(final_summary_df_with_labels)
+```
+
+
+
+
+
+
+
+#Plot 6: Count and percentages of projects by project size and sector (for all projects)
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+
+
+# Calculate the count and percentage for each range and sector
+range_sector_counts <- df_clean %>%
+  group_by(fixed_cost_range, sectors) %>%
+  summarize(sector_count = n(), .groups = 'drop') %>%
+  group_by(fixed_cost_range) %>%
+  mutate(total_count = sum(sector_count),
+         total_percentage = round((total_count / nrow(df_clean_filtered)) * 100, 1),
+         sector_percentage = round((sector_count / total_count) * 100, 1)) %>%
+  ungroup()
+
+# Prepare data for plotting
+plot_data <- range_sector_counts %>%
+  group_by(fixed_cost_range) %>%
+  mutate(sectors = factor(sectors, levels = sectors[order(-sector_count)])) %>%
+  ungroup() %>%
+  mutate(range_label = paste0(total_count, " (", total_percentage, "%)"),
+         sector_label = paste0(sector_count, " (", sector_percentage, "%)"))
+
+# Filter for sectors to label
+label_sectors <- c("AH&VS", "Agriculture", "Horticulture")
+plot_data_labels <- plot_data %>%
+  filter(sectors %in% label_sectors)
+
+# Plot using ggplot2
+plot_6 <- ggplot(plot_data, aes(x = fixed_cost_range, y = sector_count, fill = sectors)) +
+  geom_col(position = "stack", color = NA) +  # No border color for stacks
+  geom_text(data = plot_data_labels, aes(label = sector_label, y = sector_count / 2), 
+            position = position_stack(vjust = 0.5), 
+            size = 3, color = "black") +
+  geom_text(aes(label = range_label, y = total_count + 5), 
+            data = distinct(plot_data, fixed_cost_range, .keep_all = TRUE), 
+            size = 3.5, color = "black", vjust = -0.5) +
+  labs(x = "Fixed Cost Ranges", y = "Number of Projects", title = "Size of Projects by Sector") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_brewer(palette = "Set2") +  # Use a slightly darker color palette
+  theme_minimal(base_size = 17) +  # Use a minimal theme with light colors
+  theme(
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    axis.line = element_blank(),  # Remove axis lines
+    axis.ticks = element_blank(),  # Remove axis ticks
+    legend.position = "right",  # Adjust legend position as needed
+    legend.title = element_blank()  # Remove legend title
+  )
+
+# Save the plot
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_6.png", 
+       plot = plot_6, width = 12, height = 10, dpi = 300)
+
+# Print the prepared data
+print(plot_data)
+
+```
+
+
+#Plot 6b: Count and percentages of projects by project size and mode of finance (for all projects) (Duplicate)
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+
+# Calculate the count and percentage for each range and mode_of_finance
+range_mode_of_finance_counts <- df_clean_filtered %>%
+  group_by(project_cost_range, mode_of_finance) %>%
+  summarize(mode_count = n(), .groups = 'drop') %>%
+  group_by(project_cost_range) %>%
+  mutate(total_count = sum(mode_count),
+         total_percentage = round((total_count / nrow(df_clean_filtered)) * 100, 1),
+         mode_percentage = round((mode_count / total_count) * 100, 1)) %>%
+  ungroup()
+
+# Prepare data for plotting
+plot_data <- range_mode_of_finance_counts %>%
+  group_by(project_cost_range) %>%
+  mutate(mode_of_finance = factor(mode_of_finance, levels = mode_of_finance[order(-mode_count)])) %>%
+  ungroup() %>%
+  mutate(range_label = paste0(total_count, " (", total_percentage, "%)"),
+         mode_label = paste0(mode_count, " (", mode_percentage, "%)"))
+
+# Filter for modes to label
+label_modes <- c("Mode1", "Mode2", "Mode3")  # Adjust based on your actual mode_of_finance values
+plot_data_labels <- plot_data %>%
+  filter(mode_of_finance %in% label_modes)
+
+# Plot using ggplot2
+plot_6b <- ggplot(plot_data, aes(x = project_cost_range, y = mode_count, fill = mode_of_finance)) +
+  geom_col(position = "stack", color = NA) +  # No border color for stacks
+  geom_text(data = plot_data_labels, aes(label = mode_label, y = mode_count / 2), 
+            position = position_stack(vjust = 0.5), 
+            size = 3, color = "black") +
+  geom_text(aes(label = range_label, y = total_count + 5), 
+            data = distinct(plot_data, project_cost_range, .keep_all = TRUE), 
+            size = 3.5, color = "black", vjust = -0.5) +
+  labs(x = "Project Cost Ranges", y = "Number of Projects", title = "Size of Projects by Mode of Finance") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_brewer(palette = "Set2") +  # Use a slightly darker color palette
+  theme_minimal(base_size = 17) +  # Use a minimal theme with light colors
+  theme(
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    axis.line = element_blank(),  # Remove axis lines
+    axis.ticks = element_blank(),  # Remove axis ticks
+    legend.position = "right",  # Adjust legend position as needed
+    legend.title = element_blank()  # Remove legend title
+  )
+print(plot_data)
+# Save the plot
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_6b.png", 
+       plot = plot_6b, width = 12, height = 10, dpi = 300)
+
+
+
+```
+
+
+
+#Plot 7: Count and percentages of projects by project size and sector (for completed projects)
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Filter for complete == 1 and define the ranges for project_cost
+df_clean <- df_clean %>%
+  mutate(project_cost_range = cut(project_cost,
+                                  breaks = c(0, 2500000, 5000000, 10000000, Inf),
+                                  labels = c("Below 25 lakhs", "25-50 lakhs","50 lakhs-1 crore", "above 1 crore"),
+                                  right = FALSE))
+
+# Remove NA observations for the plot
+df_clean_filtered <- df_clean_filtered %>%
+  filter(!is.na(project_cost_range) & !is.na(project_sector))
+
+# Ensure project_sector is treated as a factor with levels ordered for ascending order
+df_clean_filtered <- df_clean_filtered %>%
+  mutate(project_sector = factor(project_sector, levels = sort(unique(project_sector))))
+
+# Calculate the count and percentage for each range and sector
+range_sector_counts <- df_clean_filtered %>%
+  group_by(project_cost_range, project_sector) %>%
+  summarize(sector_count = n(), .groups = 'drop') %>%
+  group_by(project_cost_range) %>%
+  mutate(total_count = sum(sector_count),
+         total_percentage = round((total_count / nrow(df_clean_filtered)) * 100, 1),
+         sector_percentage = round((sector_count / total_count) * 100, 1))
+
+# Prepare data for plotting
+plot_data <- range_sector_counts %>%
+  mutate(range_label = paste0(total_count, " (", total_percentage, ")"),
+         sector_label = paste0(sector_count, " (", sector_percentage, ")"))
+
+# Filter for sectors to label
+label_sectors <- c("AH&VS", "Agriculture", "Horticulture")
+plot_data_labels <- plot_data %>%
+  filter(project_sector %in% label_sectors)
+
+print(plot_data)
+
+# Plot using ggplot2
+ggplot(plot_data, aes(x = project_cost_range, y = sector_count, fill = project_sector)) +
+  geom_col(position = "stack", color = "black") +
+  geom_text(data = plot_data_labels, aes(label = sector_label, y = sector_count / 2), 
+            position = position_stack(vjust = 0.5), 
+            size = 3, color = "black") +
+  geom_text(aes(label = range_label, y = total_count + 5), 
+            data = distinct(plot_data, project_cost_range, .keep_all = TRUE), 
+            size = 3.5, color = "black", vjust = -0.5) +
+  labs(x = "Project Cost Range", y = "Count of Projects", title = "Bar Plot of Project Cost ranges by Project Sector (Completed Projects)") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_viridis_d() + # Cool color scale from viridis
+  theme_light(base_size = 15) +  # Use a minimal theme
+  theme(min)
+
+```
+
+
+
+
+
+
+#Plot 8: Completed and Incompleted projects by caste, gender, project sector, year of registration and mode of finance
+
+Separate bar graphs for completed and incomplete projects
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Ensure 'complete' is a factor
+df_clean$complete <- as.factor(df_clean$complete)
+
+# List of variables for which to create the plots
+vars <- c("caste", "gender", "project_sector", "mode_of_finance", "reg_year", "region")
+
+# Initialize an empty list to store the wide format data
+wide_data_list <- list()
+
+# Loop through each variable to create the plots
+for (var in vars) {
+  # Calculate counts and percentages for each stack
+  df_summary <- df_clean %>%
+    group_by(complete, !!sym(var)) %>%
+    summarise(count = n(), .groups = 'drop') %>%
+    group_by(complete) %>%
+    mutate(percentage = count / sum(count)) %>%
+    ungroup() %>%
+    arrange(complete, percentage) %>%
+    mutate(label = sprintf("%.1f%%", percentage * 100), variable = var)
+  
+  # Add the data to the list
+  wide_data_list[[var]] <- df_summary
+  
+  # Create the stacked bar plot with percentages and data labels
+p <- ggplot(df_summary, aes_string(x = "complete", y = "percentage", fill = var)) +
+  geom_bar(stat = "identity", width = 0.6) +  # Adjust the width here
+  geom_text(aes(label = label), position = position_stack(vjust = 0.5), color = "white", size = 3) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = paste("Stacked Bar Graph of", var, "by Project Completion"),
+       x = "Project Completion",
+       y = "Percentage",
+       fill = var) +
+  theme_minimal()
+  
+  # Print the plot
+  print(p)
+}
+
+# Combine all data frames into a single wide format data frame
+wide_df <- bind_rows(wide_data_list) %>%
+  select(complete, variable, !!vars, count, percentage, label) %>%
+  arrange(variable, complete)
+print(wide_df)
+```
+
+
+Separate bar graphs for all projects
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+
+# List of variables for which to create the plots
+vars <- c("caste", "gender", "project_sector", "mode_of_finance")
+
+# Loop through each variable in vars
+for (var in vars) {
+  # Create a summary data frame with counts and percentages
+  summary_df <- df_clean %>%
+    group_by(!!sym(var)) %>%
+    summarise(Count = n(), .groups = 'drop') %>%
+    mutate(Percentage = round(100 * Count / sum(Count), 1)) %>%
+    mutate(Label = paste0(Count, " (", Percentage, "%)"))
+  
+  # Create the stacked bar plot
+  barplot_demo <- ggplot(summary_df, aes(x = !!sym(var), y = Count, fill = !!sym(var))) +
+    geom_bar(stat = "identity", position = "stack") +
+    geom_text(aes(label = Label), 
+              position = position_stack(vjust = 0.5), 
+              size = 4.5) +  # Medium-sized labels inside the bars
+    scale_fill_brewer(palette = "Pastel1") +  # Use lighter colors from the Pastel1 palette
+    labs(
+      title = paste("Distribution of Registrations by", var),
+      x = var,
+      y = "Count of Registrations"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 12),  # Medium font size for x-axis labels
+      axis.title.x = element_text(size = 14),  # Medium font size for x-axis title
+      axis.title.y = element_text(size = 14),  # Medium font size for y-axis title
+      plot.title = element_text(size = 16, face = "bold"),  # Larger font size and bold for plot title
+      legend.title = element_blank(),  # Remove legend title for simplicity
+      legend.position = "none"  # Hide legend since fill colors will match x-axis categories
+    )
+  
+  # Print the plot
+  print(barplot_demo)
+}
+
+
+
+```
+
+
+Treemap for gender and caste (Incomplete)
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Load required libraries
+library(tidyverse)
+library(treemap)
+library(ggplot2)
+
+
+# Step 1: Aggregate counts based on registration_date_posix
+df_treemap <- df_clean %>%
+  filter(!is.na(gender) & !is.na(caste)) %>%  # Exclude NA values
+  group_by(gender, caste) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  mutate(total_count = sum(n),  # Total count for percentage calculation
+         percentage = n / total_count * 100)  # Calculate percentage
+
+# Step 2: Create a treemap object
+tm <- treemap(
+  df_treemap,
+  index = c("gender", "caste"),  # Hierarchical structure
+  vSize = "n",  # Size of each rectangle
+  vColor = "percentage",  # Color by percentage
+  draw.labels = TRUE,  # Draw labels
+  fontsize.labels = 8,  # Font size for labels
+  palette = "Blues",  # Color palette
+  title = "Treemap of Gender by Caste",
+  border.col = "white",  # Border color of rectangles
+  border.lwds = 0.5  # Border line width
+)
+
+# Extract plot data from the treemap object
+plot_data <- tm$tm
+
+# Ensure the necessary columns are numeric and calculate additional details
+plot_data <- plot_data %>%
+  mutate(
+    percentage = n / sum(n) * 100,  # Ensure correct percentage calculation
+    border_col = ifelse(gender %in% c("Male", "Female"), "black", "white"),
+    border_lwd = ifelse(gender %in% c("Male", "Female"), 2, 0.5),
+    label_text = paste0(n, " (", sprintf("%.1f%%", percentage), ")"),
+    label_x = x + w / 2,
+    label_y = y + h / 2
+  )
+
+# Step 3: Plot the customized treemap using ggplot2
+ggplot(plot_data, aes(xmin = x, xmax = x + w, ymin = y, ymax = y + h, fill = percentage)) +
+  geom_rect(color = plot_data$border_col, size = plot_data$border_lwd) +  # Draw rectangles with borders
+  geom_text(aes(x = label_x, y = label_y, label = label_text), color = "black", size = 3, vjust = -0.5) +  # Add text labels
+  scale_fill_gradient(low = "lightblue", high = "darkblue", name = "Percentage") +  # Gradient color scale
+  labs(title = "Treemap of Gender by Caste") +
+  theme_void() +  # No axes
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "none"  # No legend
+  )
+
+
+
+```
+
+
+
+
+#Plot 9: Year-wise and project sector wise number of applications (date of registration)
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Extract the year directly from the string and create the year and project_sector_grouped variables
+df_clean <- df_clean %>%
+  mutate(
+    project_sector_grouped = case_when(
+      project_sector %in% c("AH&VS Sector", "Agriculture Sector", "Horticulture Sector") ~ project_sector,
+      TRUE ~ "Rest"
+    )
+  )
+
+# Calculate counts and percentages
+df_summary <- df_clean %>%
+  group_by(year, project_sector_grouped) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  group_by(year) %>%
+  mutate(percentage = count / sum(count) * 100,
+         label = sprintf("%d (%.1f%%)", count, percentage)) %>%
+  ungroup() %>%
+  arrange(desc(year), desc(project_sector_grouped))
+print(df_summary)
+
+# Create the stacked bar plot with percentages in brackets
+p <- ggplot(df_summary, aes(x = year, y = count, fill = project_sector_grouped)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = label), position = position_stack(vjust = 0.5), color = "black", size = 3.5) +
+  labs(title = "Number of Registrations by Year and Project Sector",
+       x = "Year",
+       y = "Number of Registrations",
+       fill = "Project Sector") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 20)  # Increase the size of the title
+  )
+
+# Print the plot
+print(p)
+```
+
+
+
+#Plot 10: Growth in applications
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Ensure registration_date_posix is a Date object
+df_clean$registration_date_posix <- as.POSIXct(df_clean$registration_date_posix, origin = "1970-01-01", tz = "UTC")
+
+# Define the project sectors to plot individually
+sectors_to_plot <- c("AH&VS Sector", "Agriculture Sector", "Fisheries Sector", "Horticulture Sector")
+
+# Function to create scatter plot for a given sector
+create_scatter_plot <- function(df, sector_name) {
+  df_sector <- df %>% filter(project_sector == sector_name) %>%
+    arrange(registration_date_posix) %>%
+    mutate(application_number = row_number())
+
+  ggplot(df_sector, aes(x = registration_date_posix, y = application_number)) +
+    geom_point(size = .3) +  # Adjust the size of scatter dots here
+    labs(title = paste("Applications Over Time -", sector_name),
+         x = "Registration Date",
+         y = "Application Number") +
+    scale_x_datetime(date_labels = "%b %Y", date_breaks = "3 months") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(size = 14, face = "bold")
+    )
+}
+
+# Create plots for each sector
+plots <- lapply(sectors_to_plot, function(sector) {
+  create_scatter_plot(df_clean, sector)
+})
+
+# Arrange the plots in a grid
+grid.arrange(grobs = plots, ncol = 2)
+```
+
+
+
+
+
+#Plot 11: Count of observations for each stage calculated according to the dates for each variable (All projects)
+
+Data Frame
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+posix_vars <- c("registration_date_posix", "blo_date_posix", "dno_date_posix", 
+                "collector_date_posix", "apicol_dm_date_posix", 
+                "go_ahead_date_posix", 
+                "date_of_completion_posix", "blo_inspection_date_posix","dno_comparative_date_posix", "admin_comparative_date_posix", 
+                "src_date_posix", "subsidy_date_posix")
+
+# Function to count dates and NAs for each POSIX column
+count_posix_dates <- function(data, posix_vars) {
+  result <- lapply(posix_vars, function(var) {
+    data.frame(
+      variable = var,
+      dates_count = sum(!is.na(data[[var]])),
+      na_count = sum(is.na(data[[var]]))
+    )
+  })
+  do.call(rbind, result)
+}
+
+# Get the summary counts
+posix_summary_counts <- count_posix_dates(df_clean, posix_vars)
+print(posix_summary_counts)
+```
+
+Plot
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+
+
+# Function to count dates and NAs for each POSIX column
+count_posix_dates <- function(data, posix_vars) {
+  result <- lapply(posix_vars, function(var) {
+    data.frame(
+      variable = var,
+      count_type = c("non_NA", "NA"),
+      count = c(sum(!is.na(data[[var]])), sum(is.na(data[[var]])))
+    )
+  })
+  do.call(rbind, result)
+}
+
+# Get the summary counts
+posix_summary_counts <- count_posix_dates(df_clean, posix_vars)
+
+# Ensure the variable column is a factor with the specified order
+posix_summary_counts$variable <- factor(posix_summary_counts$variable, levels = posix_vars)
+
+# Calculate percentages
+posix_summary_counts <- posix_summary_counts %>%
+  group_by(variable) %>%
+  mutate(percentage = round(100 * count / sum(count), 1))
+
+# Create a named vector for new x-axis labels
+new_labels <- c(
+  "blo_date_posix" = "BLO Date",
+  "dno_date_posix" = "DNO Date",
+  "collector_date_posix" = "Collector Date",
+  "apicol_dm_date_posix" = "APICOL DM Date",
+  "go_ahead_date_posix" = "Go Ahead Date",
+  "sanction_date_posix" = "Sanction Date",
+  "date_of_completion_posix" = "Date of Completion",
+  "blo_inspection_date_posix" = "BLO Inspection Date",
+  "dno_comparative_date_posix" = "DNO Comparative",
+  "admin_comparative_date_posix" = "Admin Comparative Date",
+  "src_date_posix" = "SRC Date",
+  "subsidy_date_posix" = "Subsidy Date"
+)
+
+# Create the stacked bar plot with data labels and percentages
+plot_11 <- ggplot(posix_summary_counts, aes(x = variable, y = count, fill = count_type)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(count, " (", percentage, "%)")), 
+            position = position_stack(vjust = 0.5), size = 3) +
+  scale_x_discrete(labels = new_labels) +
+  labs(title = "Applications passing through",
+       x = "POSIX Variable",
+       y = "Count",
+       fill = "Count Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+print(plot_11)
+
+# Save the plot to a file
+# Save the plot to a file
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_11.png", 
+       plot = plot_11, width = 12, height = 10, dpi = 300)
+```
+
+
+
+
+
+#Plot 12: Count of applications that move forward within each stage
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Define the stages
+posix_vars_2 <- c("registration_date_posix", "blo_date_posix", "dno_date_posix", "collector_date_posix", "apicol_dm_date_posix",
+                  "go_ahead_date_posix", "date_of_completion_posix", 
+                  "blo_inspection_date_posix", "dno_comparative_date_posix", "admin_comparative_date_posix", 
+                  "src_date_posix", "subsidy_date_posix") 
+
+# Calculate counts
+stage_counts <- sapply(posix_vars_2, function(var) {
+  sum(!is.na(df_clean[[var]]))
+})
+
+# Create the resulting data frame
+result_df <- data.frame(
+  Stage = posix_vars_2,
+  Cleared = stage_counts
+)
+
+# Calculate the 'Applications_pending' as the difference between previous stage and current stage
+result_df$Pending <- c(NA, diff(result_df$Cleared))
+
+# Ensure 'Applications_pending' values are positive
+result_df$Pending <- abs(result_df$Pending)
+
+# Display the updated result
+print(result_df)
+
+
+
+plot_12_df <- "C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Excel Tables\\plot_12_df.xlsx"
+
+# Export the data frame to Excel
+write_xlsx(result_df, path = plot_12_df)
+```
+Number of bank loan applications that received goahead
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='markup'}
+# Count observations where go_ahead_date_posix is non-NA and mode_of_finance is "Bank"
+count_obs <- df_clean_filtered %>%
+  filter(!is.na(go_ahead_date_posix) & mode_of_finance == "Bank Loan") %>%
+  summarise(count = n())
+
+# Display the result
+print(count_obs)
+```
+Number of bank loan applications that received goahead and loan sanctioned
+```{r}
+# Load necessary library
+library(dplyr)
+
+# Filter data for the specified conditions
+filtered_data <- df_clean_filtered %>%
+  filter(!is.na(go_ahead_date_posix) & mode_of_finance == "Bank Loan")
+
+# Count observations where sanction_date_posix is non-NA in the filtered data
+count_sanction_non_na <- filtered_data %>%
+  filter(!is.na(sanction_date_posix)) %>%
+  summarise(count = n())
+
+# Display the result
+print(count_sanction_non_na)
+
+```
+
+
+
+
+
+Plot 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Define custom labels for the stages
+custom_labels <- c(
+  "registration_date_posix" = "Registration",
+  "blo_date_posix" = "BLO",
+  "dno_date_posix" = "DNO",
+  "collector_date_posix" = "Collector",
+  "apicol_dm_date_posix" = "APICOL DM",
+  "go_ahead_date_posix" = "Go Ahead",
+  "date_of_completion_posix" = "Completion",
+  "blo_inspection_date_posix" = "BLO Inspection",
+  "admin_comparative_date_posix" = "Admin Comparative",
+  "dno_comparative_date_posix" = "DNO Comparative",
+  "src_date_posix" = "SRC",
+  "subsidy_date_posix" = "Subsidy"
+)
+
+# Reshape the data for plotting
+plot_data <- result_df %>%
+  pivot_longer(cols = c("Cleared", "Pending"), names_to = "Type", values_to = "Value") %>%
+  mutate(
+    Type = factor(Type, levels = c("Cleared", "Pending")),
+    Stage = factor(Stage, levels = posix_vars_2)
+  )
+
+# Create the stacked bar chart with custom x-axis labels
+plot_12 <- ggplot(plot_data, aes(x = Stage, y = Value, fill = Type)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = Value), position = position_stack(vjust = 0.5), size = 3, color = "black") +
+  scale_fill_manual(values = c("Cleared" = "skyblue", "Pending" = "salmon")) +
+  scale_x_discrete(labels = custom_labels) +  # Custom x-axis labels
+  labs(title = "Count of Applications at Each Stage",
+       x = "Stage",
+       y = "Number of Applications",
+       fill = "Applications") +  # Legend title
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10, color = "black"), # Smaller x-axis labels
+    axis.title.x = element_text(size = 12, face = "bold"),  # X-axis title
+    axis.title.y = element_text(size = 12, face = "bold"),  # Y-axis title
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12, face = "bold"),  # Legend title size
+    legend.text = element_text(size = 10),  # Legend text size
+    legend.position = "bottom",  # Position of the legend
+    plot.margin = margin(1, 1, 2, 1, "cm")  # Adjust margins to make plot area bigger
+  )
+
+
+# Save the plot to a file
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_12.png", 
+       plot = plot_12, width = 12, height = 10, dpi = 300)
+```
+
+
+
+
+#Plot 13: Application Growth - Line graph
+
+Cumulative Monthly Line Graph
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='markup'}
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+
+# Ensure registration_date_posix is a Date object
+df_clean$registration_date_posix <- as.POSIXct(df_clean$registration_date_posix, origin = "1970-01-01", tz = "UTC")
+
+# Extract month and year from the date
+df_clean <- df_clean %>%
+  mutate(month_year = floor_date(registration_date_posix, "month"))
+
+
+# Aggregate data to get monthly count of projects per sector
+df_monthly_counts <- df_clean %>%
+  group_by(month_year, sectors) %>%
+  summarise(count = n(), .groups = 'drop')
+
+# Ensure there is a row for each combination of month_year and project_sector
+df_monthly_counts <- df_monthly_counts %>%
+  complete(month_year = seq(min(month_year), max(month_year), by = "month"), 
+           sectors, fill = list(count = 0)) %>%
+  arrange(month_year)
+
+# Calculate cumulative counts
+df_cumulative <- df_monthly_counts %>%
+  group_by(sectors) %>%
+  mutate(cumulative_count = cumsum(count)) %>%
+  ungroup()
+
+# Ensure month_year is of Date class
+df_cumulative$month_year <- as.Date(df_cumulative$month_year)
+
+print(df_cumulative)
+
+# Add a vertical line for August 2023
+august_2023 <- as.Date("2023-08-01")  # Specify the date for August 2023
+
+# Plot the cumulative counts with the vertical line and other customizations
+plot_13 <- ggplot(df_cumulative, aes(x = month_year, y = cumulative_count, color = sectors, group = sectors)) +
+  
+  # Add lines for each sector with adjustable line width
+  geom_line(size = 1.25) +
+  
+  # Add a vertical line for August 2023
+  geom_vline(xintercept = august_2023, linetype = "dashed", color = "red", size = 1) +  # Customize the vertical line
+  
+  # Customize the labels and title
+  labs(
+    title = "",
+    x = "",
+    y = "Number of Applications"
+  ) +
+  
+  # Customize the x-axis
+  scale_x_date(
+    date_labels = "%b %Y",  # Format of date labels on x-axis
+    date_breaks = "4 months"  # Interval of date labels
+  ) +
+  
+  # Customize sector names in the legend, using the exact labels from the data
+  scale_color_manual(
+    values = c(
+      "Agri-Services" = "darkorange",  # Custom color for Agriculture Sector
+      "Horticulture" = "darkgreen",  # Custom color for Horticulture Sector
+      "Fisheries" = "darkmagenta",     # Custom color for Fisheries Sector
+      "AH&VS" = "blue4",         # Custom color for AH&VS Sector
+      "Agri-Engineering" = "skyblue",
+      "Rest" = "lightgreen"                  # Custom color for Rest
+    )
+  ) +
+  
+  # Customize the theme, including titles, labels, axis text, and legend, and remove gridlines
+  theme_minimal() +
+  theme(
+    # Remove gridlines
+    panel.grid.major = element_blank(),  # Remove major gridlines
+    panel.grid.minor = element_blank(),  # Remove minor gridlines
+    
+    # Customize axis text (e.g., size, color)
+    axis.text.x = element_text(size = 18, color = "black", hjust = 0.5),  # Adjust font size and color for x-axis labels
+    axis.text.y = element_text(size = 14, color = "black"),  # Adjust font size and color for y-axis labels
+    
+    # Customize axis titles (e.g., size, color)
+    axis.title.x = element_text(size = 18, color = "black"),  # Adjust font size and color for x-axis title
+    axis.title.y = element_text(size = 18, color = "black"),  # Adjust font size and color for y-axis title
+    
+    # Customize plot title (e.g., size, color)
+    plot.title = element_text(size = 14, color = "black"),  # Adjust font size, style, and color for plot title
+    
+    # Customize legend position and appearance
+    legend.title = element_blank(),  # Remove legend title
+    legend.text = element_text(size = 22, color = "black", margin = margin(t = 2, b = 2)),  # Adjust font size, color, and margin for legend text
+    legend.position = c(0.1, 0.9),  # Set legend position inside the plot (top-left corner)
+    legend.justification = c(0, 1),  # Align legend box to top-left corner
+    
+    # Add a 1 cm margin to the right
+    plot.margin = margin(t = 0.5, r = 1, b = 0.5, l = 0.5, unit = "cm")  # Add 1 cm space on the right, and 0.5 cm on other sides
+  )
+
+# Display the plot
+print(plot_13)
+
+# Save the plot to a file
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_13.png", 
+       plot = plot_13, width = 12, height = 10, dpi = 300)
+
+
+```
+
+
+
+Six-monthly graphs for Apr 2022 to March 2024
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(lubridate)
+
+
+
+
+library(dplyr)
+
+# Step 1: Create a new variable categorizing registration_date_posix into 6-month periods
+df_clean <- df_clean %>%
+  mutate(
+    period = case_when(
+      registration_date_posix >= as.POSIXct("2022-04-01") & registration_date_posix < as.POSIXct("2022-10-01") ~ "Apr 2022 - Sep 2022",
+      registration_date_posix >= as.POSIXct("2022-10-01") & registration_date_posix < as.POSIXct("2023-04-01") ~ "Oct 2022 - Mar 2023",
+      registration_date_posix >= as.POSIXct("2023-04-01") & registration_date_posix < as.POSIXct("2023-10-01") ~ "Apr 2023 - Sep 2023",
+      registration_date_posix >= as.POSIXct("2023-10-01") & registration_date_posix <= as.POSIXct("2024-03-31") ~ "Oct 2023 - Mar 2024",
+      TRUE ~ "Outside Range"
+    )
+  )
+
+# Define the order of periods
+period_order <- c("Apr 2022 - Sep 2022", "Oct 2022 - Mar 2023", "Apr 2023 - Sep 2023", "Oct 2023 - Mar 2024")
+
+# Step 2: Modify the project_sector variable to club sectors except "AH&VS" and "Agriculture"
+df_clean <- df_clean %>%
+  mutate(
+    project_sector = case_when(
+      project_sector %in% c("AH&VS Sector", "Agriculture Sector") ~ project_sector,
+      TRUE ~ "Rest of the Sectors"
+    )
+  )
+
+# Step 3: Count the number of projects in each 6-month period for each (modified) project sector
+project_counts <- df_clean %>%
+  filter(period != "Outside Range") %>%
+  group_by(project_sector, period) %>%
+  count(name = "project_count") %>%
+  mutate(period = factor(period, levels = period_order)) %>%
+  arrange(project_sector, period)
+
+# Step 4: Prepare the data frame
+# The resulting data frame `project_counts` will have the counts for each 6-month period for the modified project sectors in chronological order
+print(project_counts)
+
+
+library(ggplot2)
+
+# Create the bar plot with project sectors on the x-axis and periods as different bars
+plot_13b <- ggplot(project_counts, aes(x = project_sector, y = project_count, fill = period)) +
+  geom_bar(stat = "identity", position = "dodge") +  # Use geom_bar to create the bar graph with dodge position
+  geom_text(aes(label = project_count), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.3,  # Position labels slightly above the bars
+            size = 3.5) +  # Size of the text labels
+  labs(
+    x = "Project Sector",
+    y = "Number of Projects",
+    title = "Number of Projects by Sector and 6-Month Period"
+  ) +
+  scale_fill_manual(values = c("Apr 2022 - Sep 2022" = "#FF9999", 
+                               "Oct 2022 - Mar 2023" = "#99CCFF", 
+                               "Apr 2023 - Sep 2023" = "#99FF99", 
+                               "Oct 2023 - Mar 2024" = "#FFCC99")) +  # Customize colors for periods
+  theme_minimal(base_size = 10) +  # Use a minimal theme with a base font size
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),  # Keep x-axis labels horizontal
+    axis.title = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_blank(),  # Remove legend title
+    legend.text = element_text(size = 10)
+  )
+
+
+
+
+# Save the plot to a file
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_13b.png", 
+       plot = plot_13b, width = 12, height = 10, dpi = 300)
+```
+
+
+
+
+Query 1: How many people eligible for 50% subsidy?
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Create a summary table of counts by caste and gender
+caste_gender_summary <- df_clean %>%
+  group_by(caste, gender) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  pivot_wider(
+    names_from = gender,
+    values_from = count,
+    values_fill = list(count = 0)  # Fill missing values with 0
+  ) %>%
+
+# Print the summary table
+print(caste_gender_summary)
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+# Calculate total counts for males and females
+total_counts <- df_clean %>%
+  group_by(gender) %>%
+  summarise(total = n(), .groups = 'drop') %>%
+  pivot_wider(names_from = gender, values_from = total, values_fill = list(total = 0))
+
+# Create a summary table of counts by caste and gender
+caste_gender_summary <- df_clean %>%
+  group_by(caste, gender) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  pivot_wider(
+    names_from = gender,
+    values_from = count,
+    values_fill = list(count = 0)  # Fill missing values with 0
+  ) %>%
+  mutate(
+    Total_Female = total_counts$Female,
+    Total_Male = total_counts$Male,
+    Female_Percentage = paste0(Female, " (", round((Female / Total_Female) * 100, 2), "%)"),
+    Male_Percentage = paste0(Male, " (", round((Male / Total_Male) * 100, 2), "%)")
+  ) %>%
+  select(caste, Female_Percentage, Male_Percentage) %>%
+  arrange(desc(as.numeric(gsub(" .*", "", Female_Percentage))))  # Arrange in descending order of Female count
+
+# Print the summary table
+print(caste_gender_summary)
+
+# Render the data frame as an interactive table
+datatable(caste_gender_summary, options = list(pageLength = 10))
+
+# Save the data frame as an HTML file
+saveWidget(datatable(caste_gender_summary, options = list(pageLength = 10)), "caste_gender_summary.html", selfcontained = TRUE)
+```
+
+
+
+
+
+#Plot 14: Range plots for all sub stages for each major stage
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+days_vars <- c("days_reg_blo", "days_blo_dno", "days_dno_collector",
+               "days_collector_apicoldm", "days_apicoldm_goahead", 
+               "days_goahead_sanction",
+               "days_sanction_cis_sanction", "days_cis_sanction_complete", "days_sanction_complete",
+               "days_complete_blo_inspect", "days_blo_inspect_dno_comp", "days_dno_comp_admin",
+               "days_admin_src", "days_src_subsidy")
+
+
+# Define the variables for each stage
+stage_1_vars <- c("days_reg_blo", "days_blo_dno", "days_dno_collector", "days_collector_apicoldm", "days_apicoldm_goahead")
+stage_2_vars <- c("days_goahead_sanction", "days_sanction_complete")
+stage_3_vars <- c("days_complete_blo_inspect", "days_blo_inspect_dno_comp", "days_dno_comp_admin", "days_admin_src")
+stage_4_vars <- c("days_src_subsidy")
+
+# Function to create combined range plot for a stage
+create_stage_plot <- function(vars, df_clean, stage_name) {
+  # Combine data for all variables in the stage
+  plot_data <- do.call(rbind, lapply(vars, function(var_name) {
+    if (!(var_name %in% colnames(df_clean))) {
+      stop(paste("Variable", var_name, "not found in df_clean"))
+    }
+    
+    if (!is.numeric(df_clean[[var_name]])) {
+      stop(paste("Variable", var_name, "is not numeric"))
+    }
+    
+    df_filtered <- df_clean[df_clean[[var_name]] >= 0, ]
+    
+    if (nrow(df_filtered) == 0) {
+      stop(paste("No non-negative values for", var_name))
+    }
+    
+    min_val <- min(df_filtered[[var_name]], na.rm = TRUE)
+    max_val <- max(df_filtered[[var_name]], na.rm = TRUE)
+    median_val <- median(df_filtered[[var_name]], na.rm = TRUE)
+    
+    data.frame(
+      variable = var_name,
+      min = min_val,
+      max = max_val,
+      median = median_val,
+      mean = mean(df_filtered[[var_name]], na.rm = TRUE)
+    )
+  }))
+  
+  # Create plot
+  ggplot(plot_data, aes(y = variable)) +
+    geom_linerange(aes(xmin = min, xmax = max), size = 5, color = "gray", alpha = 0.8) +
+    geom_point(aes(x = median, color = "Median"), size = 4, shape = 16) +
+    geom_point(aes(x = mean, color = "Mean"), size = 4, shape = 17) +
+    geom_text(aes(x = median, label = round(median)), color = "#2CA02C", size = 3.5, vjust = -0.5) +
+    geom_text(aes(x = mean, label = round(mean)), color = "#D62728", size = 3.5, vjust = -0.5) +
+    labs(y = "Variables", x = "Days", title = paste("Range plot for", stage_name)) +
+    scale_color_manual(values = c("Median" = "#2CA02C", "Mean" = "#D62728")) +
+    theme_classic(base_size = 14) +
+    theme(
+      axis.text.y = element_text(color = "black", size = 12),
+      axis.text.x = element_text(color = "black", size = 12),
+      axis.title = element_text(size = 14, face = "bold"),
+      plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+      legend.position = "top",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 12)
+    ) +
+    guides(
+      color = guide_legend(title = NULL)
+    )
+}
+
+# Create combined plots for each stage
+plot_stage_1 <- create_stage_plot(stage_1_vars, df_clean, "Stage 1")
+plot_stage_2 <- create_stage_plot(stage_2_vars, df_clean, "Stage 2")
+plot_stage_3 <- create_stage_plot(stage_3_vars, df_clean, "Stage 3")
+plot_stage_4 <- create_stage_plot(stage_4_vars, df_clean, "Stage 4")
+
+# Print the plots
+print(plot_stage_1)
+print(plot_stage_2)
+print(plot_stage_3)
+print(plot_stage_4)
+
+print(plot_data)
+```
+
+Combined Plot
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(patchwork)  # For combining plots
+
+# Updated function to create combined range plot for a stage
+create_stage_plot <- function(vars, df_clean, stage_name, markers = NULL, y_labels = NULL) {
+  # Combine data for all variables in the stage
+  plot_data <- do.call(rbind, lapply(vars, function(var_name) {
+    if (!(var_name %in% colnames(df_clean))) {
+      stop(paste("Variable", var_name, "not found in df_clean"))
+    }
+    
+    if (!is.numeric(df_clean[[var_name]])) {
+      stop(paste("Variable", var_name, "is not numeric"))
+    }
+    
+    df_filtered <- df_clean[df_clean[[var_name]] >= 0, ]
+    
+    if (nrow(df_filtered) == 0) {
+      stop(paste("No non-negative values for", var_name))
+    }
+    
+    min_val <- min(df_filtered[[var_name]], na.rm = TRUE)
+    max_val <- max(df_filtered[[var_name]], na.rm = TRUE)
+    median_val <- median(df_filtered[[var_name]], na.rm = TRUE)
+    
+    data.frame(
+      variable = var_name,
+      min = min_val,
+      max = max_val,
+      median = median_val
+    )
+  }))
+  
+  # Convert variable to a factor with the specified order
+  plot_data$variable <- factor(plot_data$variable, levels = vars, labels = y_labels)
+  
+  # Create plot
+  p <- ggplot(plot_data, aes(y = variable)) +
+    geom_linerange(aes(xmin = min, xmax = max), size = 5, color = "gray", alpha = 0.8) +
+    geom_point(aes(x = median, color = "Median"), size = 4, shape = 16) +
+    geom_text(aes(x = median, label = round(median)), color = "#2CA02C", size = 3.5, vjust = 1.5) +  # Median above the line
+    labs(y = NULL, x = "Days", title = stage_name) +
+    scale_color_manual(values = c("Median" = "#2CA02C")) +
+    theme_classic(base_size = 14) +
+    theme(
+      axis.text.y = element_text(color = "black", size = 12),
+      axis.text.x = element_text(color = "black", size = 12),
+      axis.title = element_text(size = 14, face = "bold"),
+      plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+      legend.position = "top",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 10)  # Smaller font size for the legend
+    ) +
+    guides(
+      color = guide_legend(title = NULL)
+    )
+  
+  # Add markers and labels if provided
+  if (!is.null(markers)) {
+    marker_data <- data.frame(
+      variable = factor(vars, levels = vars, labels = y_labels),
+      marker_value = markers
+    )
+    
+    # Join marker data with plot data
+    p <- p + 
+      geom_point(data = marker_data, aes(x = marker_value, y = variable, color = "Threshold"), size = 4, shape = 18) +
+      geom_text(data = marker_data, aes(x = marker_value, y = variable, label = marker_value), color = "blue", size = 3.5, vjust = -1) +
+      scale_color_manual(values = c("Median" = "#2CA02C", "Threshold" = "blue"))
+  }
+  
+  return(p)
+}
+
+# Custom y-axis labels for each stage
+stage_1_labels <- c("Registration to BLO", "BLO to DNO", "DNO to Collector", "Collector to APICOL DM", "APICOL DM to Go Ahead")
+stage_2_labels <- c("Go Ahead to Bank Sanction", "Bank Sanction to Completion")
+stage_3_labels <- c("Completion to BLO Inspection", "BLO Inspection to DNO Comparative", "DNO Comparative to Admin", "Admin to SRC")
+stage_4_labels <- c("SRC to Subsidy Release")
+
+# Titles for each stage
+stage_1_title <- "First - Registration"
+stage_2_title <- "Second - Completion"
+stage_3_title <- "Third - Inspection"
+stage_4_title <- "Fourth - Subsidy Release"
+
+# Define markers for each stage
+stage_1_markers <- c(7, 8, 30, 4, 3)
+stage_3_markers <- c(7, 36, 30, 7)
+stage_4_markers <- c(7)
+
+# Create combined plots for each stage with custom labels and titles
+plot_stage_1 <- create_stage_plot(stage_1_vars, df_clean, stage_1_title, stage_1_markers, y_labels = stage_1_labels)
+plot_stage_2 <- create_stage_plot(stage_2_vars, df_clean, stage_2_title, y_labels = stage_2_labels)
+plot_stage_3 <- create_stage_plot(stage_3_vars, df_clean, stage_3_title, stage_3_markers, y_labels = stage_3_labels)
+plot_stage_4 <- create_stage_plot(stage_4_vars, df_clean, stage_4_title, stage_4_markers, y_labels = stage_4_labels)
+
+# Combine all plots into a 2x2 grid
+combined_plot <- (plot_stage_1 | plot_stage_2) /
+                  (plot_stage_3 | plot_stage_4)
+
+# Print the combined plot
+print(combined_plot)
+
+# Save the combined plot
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_14.png", plot = combined_plot, width = 12, height = 10, dpi = 300)
+
+```
+
+
+
+
+#Plot 15: District-wise bar plot of applications with sector stacks for all projects
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Prepare the data
+plot_data <- df_clean %>%
+  group_by(district, sectors) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  group_by(district) %>%
+  mutate(TotalCount = sum(Count)) %>%
+  ungroup() %>%
+  arrange(TotalCount) %>%  # Sort districts in ascending order of Total Count
+  mutate(district = factor(district, levels = unique(district)))  # Ensure proper order in the plot
+
+# Convert to wide format with district as the first column and arrange by TotalCount in descending order
+wide_data <- plot_data %>%
+  pivot_wider(
+    names_from = sectors,
+    values_from = Count,
+    values_fill = list(Count = 0)  # Fill missing values with 0
+  ) %>%
+  arrange(desc(TotalCount))  # Arrange by Total Count in descending order
+
+# Display the resulting wide data frame
+print(wide_data)
+
+# Convert to long format for plotting
+long_data <- wide_data %>%
+  pivot_longer(
+    cols = -c(district, TotalCount),
+    names_to = "project_sector",
+    values_to = "Count"
+  ) %>%
+  mutate(Percentage = round((Count / TotalCount) * 100, 1))  # Calculate percentage for each sector
+
+# Create the horizontal stacked bar chart
+plot_15 <- ggplot(long_data, aes(x = reorder(district, TotalCount), y = Count, fill = fct_reorder(project_sector, -Count))) +
+  geom_bar(stat = "identity") +
+  geom_text(
+    aes(label = ifelse(Count > 0, paste0(Count, " (", Percentage, "%)"), "")),
+    position = position_stack(vjust = 0.5),  # Position the labels inside each segment
+    size = 3.5  # Adjust label size for better readability
+  ) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(
+    title = "Distribution of Applications by District and Project Sector",
+    x = "District",
+    y = "Number of Applications",
+    fill = "Project Sector"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 10, color = "black"),  # Customize y-axis labels
+    axis.title.x = element_text(size = 12, face = "bold"),  # X-axis title
+    axis.title.y = element_text(size = 12, face = "bold"),  # Y-axis title
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),  # Center the plot title
+    legend.title = element_text(size = 12, face = "bold"),  # Legend title
+    legend.text = element_text(size = 10),  # Legend text size
+    legend.position = "bottom"  # Position of the legend
+  ) +
+  coord_flip()  # Flip coordinates for a horizontal plot
+
+# Display the plot
+print(plot_15)
+
+
+
+
+
+# Save the plot to a file
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_15.png", 
+       plot = plot_15, width = 12, height = 10, dpi = 300)
+```
+
+
+#Plot 16: District-wise bar plot of applications with sector stacks for completed projects
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Prepare the data with filter for complete = 1
+plot_data <- df_clean %>%
+  filter(completion == 1) %>%  # Filter for complete = 1
+  group_by(district, project_sector) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  mutate(project_sector = factor(project_sector)) %>%
+  group_by(district) %>%
+  mutate(
+    TotalCount = sum(Count),
+    # Determine the order of project_sector within each district
+    project_sector_order = factor(project_sector, levels = project_sector[order(-Count)])
+  ) %>%
+  ungroup() %>%
+  arrange(district, project_sector_order) %>%
+  group_by(district) %>%
+  mutate(cumulative_count = cumsum(Count) - Count / 2) %>%
+  ungroup() %>%
+  arrange(TotalCount) %>%  # Sort districts in ascending order of TotalCount
+  mutate(district = factor(district, levels = unique(district)))  # Ensure proper order in the plot
+
+# Create the horizontal stacked bar chart grouped by district
+plot_16 <- ggplot(plot_data, aes(x = district, y = Count, fill = project_sector_order)) +
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "Set3") +  # Use a color palette for better visualization
+  labs(title = "Count of Applications by Project Sector for Each District for Completed Projects",
+       x = "District",
+       y = "Number of Applications",
+       fill = "Project Sector") +  # Legend title
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 12, color = "black"), # Customize y-axis labels (districts)
+    axis.title.x = element_text(size = 12, face = "bold"),  # X-axis title
+    axis.title.y = element_text(size = 12, face = "bold"),  # Y-axis title
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 12, face = "bold"),  # Legend title size
+    legend.text = element_text(size = 10),  # Legend text size
+    legend.position = "bottom"  # Position of the legend
+  ) +
+  coord_flip()  # Flip coordinates for horizontal plot
+print(plot_16)
+
+# Save the plot to a file
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_16.png", 
+       plot = plot_16, width = 12, height = 10, dpi = 300)
+```
+
+
+
+#Plot 17: Completed projects without delays, with delays and projects that are still in the process 
+
+Data frame for counts and percentages
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+# Initialize an empty data frame to store the results
+results <- data.frame(
+  Variable = character(),
+  Within_Specified_Time = numeric(),
+  Beyond_Specified_Time = numeric(),
+  Within_Specified_Time_No_Next = numeric(),
+  Beyond_Specified_Time_No_Next = numeric(),
+  Total = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop through each variable in days_vars
+for (i in seq_along(days_vars)) {
+  var <- days_vars[i]
+  specified_time <- specified_days[i]
+  
+  # Find the next variable in the sequence, if it exists
+  next_stage <- if (i < length(days_vars)) days_vars[i + 1] else NA
+  
+  # Check if next_stage is not NA before proceeding
+  if (!is.na(next_stage)) {
+    within_time <- sum(!is.na(df_clean[[var]]) & df_clean[[var]] <= specified_time & !is.na(df_clean[[next_stage]]), na.rm = TRUE)
+    beyond_time <- sum(!is.na(df_clean[[var]]) & df_clean[[var]] > specified_time & !is.na(df_clean[[next_stage]]), na.rm = TRUE)
+    within_time_no_next <- sum(!is.na(df_clean[[var]]) & df_clean[[var]] <= specified_time & is.na(df_clean[[next_stage]]), na.rm = TRUE)
+    beyond_time_no_next <- sum(!is.na(df_clean[[var]]) & df_clean[[var]] > specified_time & is.na(df_clean[[next_stage]]), na.rm = TRUE)
+  } else {
+    # If there's no next stage, we can't categorize 'not moved'
+    within_time <- sum(!is.na(df_clean[[var]]) & df_clean[[var]] <= specified_time, na.rm = TRUE)
+    beyond_time <- sum(!is.na(df_clean[[var]]) & df_clean[[var]] > specified_time, na.rm = TRUE)
+    within_time_no_next <- 0
+    beyond_time_no_next <- 0
+  }
+  
+  # Calculate total for the current variable
+  total <- within_time + beyond_time + within_time_no_next + beyond_time_no_next
+  
+  # Add the results to the data frame
+  results <- rbind(results, data.frame(
+    Variable = var,
+    Within_Specified_Time = within_time,
+    Beyond_Specified_Time = beyond_time,
+    Within_Specified_Time_No_Next = within_time_no_next,
+    Beyond_Specified_Time_No_Next = beyond_time_no_next,
+    Total = total
+  ))
+}
+
+# Add percentages in brackets for each count
+results <- results %>%
+  mutate(
+    Within_Specified_Time = paste(Within_Specified_Time, "(", round(100 * Within_Specified_Time / Total, 1), "%)", sep = ""),
+    Beyond_Specified_Time = paste(Beyond_Specified_Time, "(", round(100 * Beyond_Specified_Time / Total, 1), "%)", sep = ""),
+    Within_Specified_Time_No_Next = paste(Within_Specified_Time_No_Next, "(", round(100 * Within_Specified_Time_No_Next / Total, 1), "%)", sep = ""),
+    Beyond_Specified_Time_No_Next = paste(Beyond_Specified_Time_No_Next, "(", round(100 * Beyond_Specified_Time_No_Next / Total, 1), "%)", sep = "")
+  )
+
+# Print the resulting data frame with percentages
+print(results)
+
+
+
+```
+
+
+Plot for percentages
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Convert counts to numeric values
+results_clean <- results %>%
+  mutate(
+    Within_Specified_Time = as.numeric(gsub("[^0-9]", "", Within_Specified_Time)),
+    Beyond_Specified_Time = as.numeric(gsub("[^0-9]", "", Beyond_Specified_Time)),
+    Within_Specified_Time_No_Next = as.numeric(gsub("[^0-9]", "", Within_Specified_Time_No_Next)),
+    Beyond_Specified_Time_No_Next = as.numeric(gsub("[^0-9]", "", Beyond_Specified_Time_No_Next))
+  )
+
+# Reshape data to long format and calculate percentages
+results_percent <- results_clean %>%
+  select(-Total) %>%
+  gather(key = "Category", value = "Count", -Variable) %>%
+  group_by(Variable) %>%
+  mutate(Percentage = (Count / sum(Count)) * 100) %>%
+  ungroup() %>%
+  mutate(
+    Category = factor(Category, levels = c(
+      "Within_Specified_Time",
+      "Beyond_Specified_Time",
+      "Within_Specified_Time_No_Next",
+      "Beyond_Specified_Time_No_Next"
+    )),
+    Variable = factor(Variable, levels = days_vars)  # Ensure the order matches days_vars
+  )
+
+# Plot 100% stacked bar plot
+ggplot(results_percent, aes(x = Variable, y = Percentage, fill = Category)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_manual(values = c(
+    "Within_Specified_Time" = "#c6e2ff",  # Light blue
+    "Beyond_Specified_Time" = "#7ec0ee",  # Slightly darker blue
+    "Within_Specified_Time_No_Next" = "#b4c6e7",  # Light purple
+    "Beyond_Specified_Time_No_Next" = "#6a5acd"   # Darker purple
+  )) +
+  geom_text(aes(label = sprintf("%.1f%%", Percentage)), 
+            position = position_fill(vjust = 0.5), size = 3) +
+  labs(title = "100% Stacked Bar Plot of Applications by Time Categories",
+       x = "Stages",
+       y = "Percentage",
+       fill = "Category") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.text = element_text(size = 8),
+        axis.title = element_text(size = 10),
+        plot.title = element_text(size = 12))
+
+
+```
+
+Plot for counts 
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Convert the results data frame to a long format for easier plotting with ggplot2
+results_long <- results %>%
+  select(-Total) %>%  # Exclude the Total column
+  gather(key = "Category", value = "Count", -Variable) %>%
+  mutate(Category = factor(Category, levels = c(
+    "Within_Specified_Time",
+    "Beyond_Specified_Time",
+    "Within_Specified_Time_No_Next",
+    "Beyond_Specified_Time_No_Next"
+  )),
+  Variable = factor(Variable, levels = days_vars))  # Ensure the order matches days_vars
+
+# Create the stacked bar plot
+ggplot(results_long, aes(x = Variable, y = Count, fill = Category)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = c(
+    "Within_Specified_Time" = "#c6e2ff",  # Light blue
+    "Beyond_Specified_Time" = "#7ec0ee",  # Slightly darker blue
+    "Within_Specified_Time_No_Next" = "#b4c6e7",  # Light purple
+    "Beyond_Specified_Time_No_Next" = "#6a5acd"   # Darker purple
+  )) +
+  geom_text(aes(label = Count), position = position_stack(vjust = 0.5), size = 3) +
+  labs(title = "Stacked Bar Plot of Applications by Time Categories",
+       x = "Stages",
+       y = "Number of Applications",
+       fill = "Category") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+#Plot 18: Completed projects with and without delays
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Define the time difference variables and their corresponding specified values
+time_diff_vars <- c("days_reg_goahead", "days_goahead_complete", "days_complete_src", 
+                    "days_src_subsidy")
+specified_values <- c(52, 730, 80, 7)
+
+# Initialize an empty data frame to store the results
+results <- data.frame(
+  Variable = character(),
+  Within_Specified_Time = character(),  # Changed to character to accommodate percentages
+  Beyond_Specified_Time = character(),  # Changed to character to accommodate percentages
+  Total = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop through each variable in time_diff_vars
+for (i in seq_along(time_diff_vars)) {
+  var <- time_diff_vars[i]
+  specified_time <- specified_values[i]
+  
+  # Find the next variable in the sequence, if it exists
+  next_stage <- if (i < length(time_diff_vars)) time_diff_vars[i + 1] else NA
+  
+  # Check if next_stage is not NA before proceeding
+  if (!is.na(next_stage)) {
+    within_time <- sum(!is.na(df_clean[[var]]) & df_clean[[var]] <= specified_time & !is.na(df_clean[[next_stage]]), na.rm = TRUE)
+    beyond_time <- sum(!is.na(df_clean[[var]]) & df_clean[[var]] > specified_time & !is.na(df_clean[[next_stage]]), na.rm = TRUE)
+  } else {
+    within_time <- sum(!is.na(df_clean[[var]]) & df_clean[[var]] <= specified_time, na.rm = TRUE)
+    beyond_time <- sum(!is.na(df_clean[[var]]) & df_clean[[var]] > specified_time, na.rm = TRUE)
+  }
+  
+  # Calculate total for the current variable
+  total <- within_time + beyond_time
+  
+  # Add the results to the data frame
+  results <- rbind(results, data.frame(
+    Variable = var,
+    Within_Specified_Time = paste(within_time, "(", round(100 * within_time / total, 1), "%)", sep = ""),
+    Beyond_Specified_Time = paste(beyond_time, "(", round(100 * beyond_time / total, 1), "%)", sep = ""),
+    Total = total
+  ))
+}
+
+# Print the resulting data frame with percentages
+print(results)
+
+# Arrange the data frame in the same order as time_diff_vars
+results <- results %>%
+  mutate(Variable = factor(Variable, levels = time_diff_vars)) %>%
+  arrange(Variable)
+
+# Reshape the data frame to long format for plotting
+results_long <- results %>%
+  pivot_longer(
+    cols = c(Within_Specified_Time, Beyond_Specified_Time),
+    names_to = "Time_Category",
+    values_to = "Count_Percentage"
+  )
+
+# Extract numeric counts from the Count_Percentage column for plotting
+results_long$Count <- as.numeric(sub("\\(.*\\)", "", results_long$Count_Percentage))
+
+# Create the stacked bar plot
+ggplot(results_long, aes(x = Variable, y = Count, fill = Time_Category)) +
+  geom_bar(stat = "identity", position = "stack") +  # Stack bars
+  geom_text(aes(label = Count_Percentage), 
+            position = position_stack(vjust = 0.5), 
+            size = 4.5) +  # Medium-sized labels inside the bars
+  scale_fill_brewer(palette = "Pastel1") +  # Use lighter colors from the Pastel1 palette
+  labs(
+    title = "Projects Within and Beyond Specified Time",
+    x = "Variable",
+    y = "Count of Projects"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),  # Medium font size for x-axis labels
+    axis.title.x = element_text(size = 14),  # Medium font size for x-axis title
+    axis.title.y = element_text(size = 14),  # Medium font size for y-axis title
+    plot.title = element_text(size = 16, face = "bold")  # Larger font size and bold for plot title
+  )
+
+
+```
+
+
+
+
+#Plot 19: Block Map
+
+Basic
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Load required libraries
+library(tidyverse)
+library(sf)
+library(ggplot2)
+
+# Step 1: Read the Odisha blocks shapefile
+odisha_blocks <- st_read("C:\\Users\\Admin\\Documents\\CRFM\\Maps\\OD_block_shp_1\\Odisha_Admin_Block_BND_2021.shp")
+
+# Step 2: Prepare the project data
+# Assuming 'df_clean' is your data frame and 'block_cleaned' is the variable for blocks
+# Ensure 'block_cleaned' in df_clean and the join key in odisha_blocks are correctly matched
+project_counts <- df_clean %>%
+  count(block_cleaned) %>%
+  rename(block_name = block_cleaned, project_count = n)
+
+# Step 3: Inspect and match column names
+# Print column names to check if there is a discrepancy
+print(colnames(odisha_blocks))
+print(colnames(project_counts))
+
+# Ensure that the column used for merging in both dataframes has the same name and is of the same type
+
+# Merge the project counts with the shapefile data
+odisha_blocks <- odisha_blocks %>%
+  left_join(project_counts, by = "block_name")
+
+# Check if the merge worked correctly
+print(head(odisha_blocks))
+
+# Step 4: Plot the map
+ggplot(data = odisha_blocks) +
+  geom_sf(aes(fill = project_count), color = "white") +  # Fill color based on project count
+  scale_fill_viridis_c(name = "Number of Projects", na.value = "grey80") +  # Color scale with NA handling
+  labs(title = "Number of Projects by Block in Odisha",
+       subtitle = "Count of projects per block",
+       fill = "Number of Projects") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 8),
+        axis.text = element_text(size = 8))
+
+
+```
+
+
+Without district labels
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Load required libraries
+library(tidyverse)
+library(sf)
+library(ggplot2)
+
+# Step 1: Read the Odisha blocks shapefile
+odisha_blocks <- st_read("C:\\Users\\Admin\\Documents\\CRFM\\Maps\\OD_block_shp_1\\Odisha_Admin_Block_BND_2021.shp")
+
+# Step 2: Prepare the project data
+project_counts <- df_clean %>%
+  count(block_cleaned) %>%
+  rename(block_name = block_cleaned, project_count = n)
+
+# Merge the project counts with the shapefile data
+odisha_blocks <- odisha_blocks %>%
+  left_join(project_counts, by = "block_name")
+
+# Step 3: Read the Odisha districts shapefile (for district boundaries)
+odisha_districts <- st_read("C:\\Users\\Admin\\Documents\\CRFM\\Maps\\OD_district_shp_2\\odisha_district.shp")
+
+# Step 4: Plot the map with modifications
+plot_19 <- ggplot(data = odisha_blocks) +
+  geom_sf(aes(fill = project_count), color = "white") +  # Fill color based on project count
+  scale_fill_gradient(low = "light yellow", high = "red", name = "Number of Projects", na.value = "grey80") +  # Heatmap effect
+  geom_sf(data = odisha_districts, fill = NA, color = "black", size = 0.5) +  # Add district boundaries
+  labs(title = "Block-wise Distribution of Projects",
+       subtitle = "Number of projects per block",
+       fill = "Number of Projects") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 8),
+        axis.text = element_blank(),  # Remove axis text
+        axis.ticks = element_blank(),  # Remove axis ticks
+        axis.title = element_blank())  # Remove axis titles
+
+
+print(plot_19)
+# Save the plot to a file
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_19.png", 
+       plot = plot_19, width = 12, height = 10, dpi = 300)
+```
+
+
+With district labels
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Load required libraries
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(grid)  # For annotation_custom
+
+# Step 1: Read the Odisha blocks shapefile
+odisha_blocks <- st_read("C:\\Users\\Admin\\Documents\\CRFM\\Maps\\OD_block_shp_1\\Odisha_Admin_Block_BND_2021.shp")
+
+# Step 2: Prepare the project data
+project_counts <- df_clean %>%
+  count(block_cleaned) %>%
+  rename(block_name = block_cleaned, project_count = n)
+
+# Merge the project counts with the shapefile data
+odisha_blocks <- odisha_blocks %>%
+  left_join(project_counts, by = "block_name")
+
+# Step 3: Read the Odisha districts shapefile (for district boundaries)
+odisha_districts <- st_read("C:\\Users\\Admin\\Documents\\CRFM\\Maps\\OD_district_shp_2\\odisha_district.shp")
+
+# Step 4: Plot the map with modifications
+plot_19b <- ggplot(data = odisha_blocks) +
+  geom_sf(aes(fill = project_count), color = "white") +  # Fill color based on project count
+  scale_fill_gradient(low = "light yellow", high = "red", name = "Number of Projects", na.value = "grey80") +  # Heatmap effect
+  geom_sf(data = odisha_districts, fill = NA, color = "black", size = 0.5) +  # Add district boundaries
+  geom_sf_text(data = odisha_districts, aes(label = district), size = 3, color = "black") +  # Add district labels
+  labs(title = "Block-wise Distribution of Projects",
+       subtitle = "Number of projects per blockYes",
+       fill = "Number of Projects") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 8),
+        axis.text = element_blank(),  # Remove axis text
+        axis.ticks = element_blank(),  # Remove axis ticks
+        axis.title = element_blank()) +  # Remove axis titles
+
+# Save the plot to a file
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_19b.png", 
+       plot = plot_19b, width = 12, height = 10, dpi = 300)
+```
+
+#Plot 19b: District Map of counts of projects 
+
+Identifying unmatched district names in df_clean and odisha_districts shp
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='markup'}
+# Extract unique district names from both datasets
+unique_districts_df_clean <- unique(df_clean$district)
+unique_districts_odisha_districts <- unique(odisha_districts$district)
+
+# Find district names in df_clean that are not in odisha_districts
+missing_in_odisha <- setdiff(unique_districts_df_clean, unique_districts_odisha_districts)
+
+# Find district names in odisha_districts that are not in df_clean
+missing_in_df_clean <- setdiff(unique_districts_odisha_districts, unique_districts_df_clean)
+
+# Combine the results into a list for easier review
+discrepancies <- list(
+  missing_in_odisha = missing_in_odisha,
+  missing_in_df_clean = missing_in_df_clean
+)
+
+# Print discrepancies
+print(discrepancies)
+
+```
+Changing district names manually in odisha_districts
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='markup'}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(stringdist)  # Ensure stringdist is also loaded
+
+# Read the shapefile
+odisha_districts <- st_read("C:\\Users\\Admin\\Documents\\CRFM\\Maps\\OD_district_shp_2\\odisha_district.shp")
+
+# Standardize 'district' names in odisha_districts
+odisha_districts <- odisha_districts %>%
+  mutate(district = tools::toTitleCase(tolower(trimws(district))))
+
+# Manually update district names in odisha_districts
+odisha_districts <- odisha_districts %>%
+  mutate(district = case_when(
+    district == "Baleshwar" ~ "Balasore",
+    district == "Kendujhar" ~ "Keonjhar",
+    district == "Subarnapur" ~ "Sonepur",
+    district == "Anugul" ~ "Angul",
+    district == "Khordha" ~ "Khurdha",
+    district == "Nabarangapur" ~ "Nabarangpur",
+    district == "Jajapur" ~ "Jajpur",
+    district == "Bauda" ~ "Boudh",
+    district == "Debagarh" ~ "Deogarh",
+    # Add more manual updates if needed
+    TRUE ~ district  # Keep other names unchanged
+  ))
+
+# Standardize 'district' names in df_clean
+df_clean <- df_clean %>%
+  mutate(district = tools::toTitleCase(tolower(trimws(district))))
+
+# Summarize project count by district in df_clean
+district_project_count <- df_clean %>%
+  group_by(district) %>%
+  summarise(project_count = n(), .groups = 'drop')
+
+# Join the cleaned data with original odisha_districts to ensure all columns are included
+final_data <- odisha_districts %>%
+  left_join(
+    district_project_count %>% rename(district_odisha = district),
+    by = c("district" = "district_odisha")
+  )
+
+# Inspect final_data
+print(final_data)
+
+# Plot the map with larger legend
+plot_19b <- ggplot(data = final_data) +
+  geom_sf(aes(fill = project_count), color = "black") +  # Fill based on 'count' with black boundaries
+  scale_fill_gradient(low = "lightyellow", high = "red", name = "Application Count") +  # Red color scale
+  geom_sf_text(aes(label = district), size = 5, color = "black", fontface = "bold") +  # Add district labels
+  theme_minimal() +  # Clean theme
+  labs(title = "", 
+       caption = "") +  # Labels
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    plot.caption = element_text(size = 10),
+    legend.title = element_text(size = 18),  # Increase legend title size
+    legend.text = element_text(size = 16),  # Increase legend text size
+    legend.key.size = unit(1.5, "cm"),  # Increase the size of the legend key
+    axis.text.x = element_blank(),  # Remove x-axis text
+    axis.text.y = element_blank(),  # Remove y-axis text
+    axis.title.x = element_blank(),  # Remove x-axis title
+    axis.title.y = element_blank(),  # Remove y-axis title
+    legend.position = "bottom"  # Move legend to the bottom
+  )
+
+# Display the plot
+plot_19b
+
+
+# Save the plot to a file
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_19b.png", 
+       plot = plot_19b, width = 12, height = 10, dpi = 300)
+
+
+
+
+
+```
+
+
+
+
+
+
+#Plot 20: Days between stages for major stages for different project sizes (all projects)
+
+Separate plots
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# Define project cost ranges
+df_clean$project_cost_range <- cut(df_clean$project_cost,
+                                   breaks = c(0, 2500000, 5000000, 10000000, Inf),
+                                   labels = c("Below 25 lakhs", "25-50 lakhs", "50 lakhs-1 crore", "Above 1 crore"),
+                                   right = FALSE)
+
+# Define the time difference variables
+time_diff_vars <- c("days_reg_goahead", "days_goahead_complete", "days_complete_src", 
+                    "days_src_subsidy")
+
+# Define custom y-axis labels
+custom_y_labels <- c(
+  "days_reg_goahead" = "Registration",
+  "days_goahead_complete" = "Completion",
+  "days_complete_src" = "Inspection",
+  "days_src_subsidy" = "Subsidy Release"
+)
+
+# Create a list to store plots
+plot_list <- list()
+
+# Loop over each project cost range and generate plots
+for (range in levels(df_clean$project_cost_range)) {
+  
+  # Filter the data for the current project cost range
+  filtered_df <- df_clean %>%
+    filter(project_cost_range == range) %>%
+    mutate(across(all_of(time_diff_vars), ~ ifelse(. < 0, NA, .)))
+  
+  # Gather data for plotting, excluding negative values
+  plot_data <- filtered_df %>%
+    select(all_of(time_diff_vars)) %>%
+    pivot_longer(everything(), names_to = "Stage", values_to = "Days") %>%
+    filter(!is.na(Days))
+  
+  # Set factor levels for Stage to match the order of time_diff_vars
+  plot_data$Stage <- factor(plot_data$Stage, levels = time_diff_vars)
+  
+  # Prepare summary points and ranges for plotting
+  summary_points <- plot_data %>%
+    group_by(Stage) %>%
+    summarize(
+      median = median(Days, na.rm = TRUE),
+      min = min(Days, na.rm = TRUE),
+      max = max(Days, na.rm = TRUE)
+    ) %>%
+    pivot_longer(cols = c(median, min, max), names_to = "statistic", values_to = "value") %>%
+    ungroup()  # Ensure ungrouped before plotting
+  
+  summary_ranges <- plot_data %>%
+    group_by(Stage) %>%
+    summarize(
+      min = min(Days, na.rm = TRUE),
+      max = max(Days, na.rm = TRUE)
+    ) %>%
+    ungroup()  # Ensure ungrouped before plotting
+  
+  # Example of specified points (replace with actual values if needed)
+  specified_points <- data.frame(
+    Stage = time_diff_vars,
+    specified_value = c(52, 730, 80, 7)  # Replace with actual specified points if needed
+  )
+  
+  # Plot using ggplot2 with horizontal line range graph and labels
+  plot <- ggplot() +
+    geom_linerange(data = summary_ranges, aes(y = Stage, xmin = min, xmax = max),
+                   size = 7, color = "gray", alpha = 0.8) +  # Increased line width
+    geom_point(data = summary_points %>% filter(statistic != "mean"), aes(y = Stage, x = value, color = statistic, shape = statistic),
+               size = 6) +  # Increased marker size
+    geom_point(data = specified_points, aes(y = Stage, x = specified_value, color = "Guidelines threshold", shape = "Guidelines threshold"),
+               size = 6) +  # Increased marker size
+    geom_text(data = summary_ranges, aes(y = Stage, x = max, label = round(max)),
+              hjust = -0.3, color = "black", size = 3.5) +
+    geom_text(data = specified_points, aes(y = Stage, x = specified_value, label = specified_value),
+              hjust = 1.3, color = "blue", size = 3.5) +
+    geom_text(data = summary_points %>% filter(statistic == "median"), 
+              aes(y = Stage, x = value, label = round(value)),
+              vjust = -1, color = "#2CA02C", size = 3.5) +  # Add labels above median points
+    scale_shape_manual(values = c("median" = 16, "Guidelines threshold" = 18)) +
+    scale_color_manual(values = c("median" = "#2CA02C", "Guidelines threshold" = "blue")) +
+    labs(y = "Stages", x = "Number of Days", title = paste("Number of Days Between Major Stages (Project Cost Range:", range, ")")) +
+    scale_y_discrete(labels = custom_y_labels) +  # Custom y-axis labels
+    theme_classic(base_size = 12) +  # Using theme_classic with a larger base font size
+    theme(
+      axis.text.y = element_text(color = "black", size = 12),
+      axis.text.x = element_text(color = "black", size = 12),
+      axis.title = element_text(size = 14),
+      plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+      legend.position = "top",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 12)
+    ) +
+    guides(
+      color = guide_legend(title = NULL),
+      shape = guide_legend(title = NULL)
+    )
+print(plot)
+}
+
+print(summary_ranges)
+```
+
+Combined Plot
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(patchwork)
+
+# Define project cost ranges
+df_clean$project_cost_range <- cut(df_clean$project_cost,
+                                   breaks = c(0, 2500000, 5000000, 10000000, Inf),
+                                   labels = c("Below 25 lakhs", "25-50 lakhs", "50 lakhs-1 crore", "Above 1 crore"),
+                                   right = FALSE)
+
+# Define the time difference variables
+time_diff_vars <- c("days_reg_goahead", "days_goahead_complete", "days_complete_src", 
+                    "days_src_subsidy")
+
+# Define custom y-axis labels
+custom_y_labels <- c(
+  "days_reg_goahead" = "Registration",
+  "days_goahead_complete" = "Completion",
+  "days_complete_src" = "Inspection",
+  "days_src_subsidy" = "Subsidy Release"
+)
+
+# Create a list to store plots
+plot_list <- list()
+
+# Loop over each project cost range and generate plots
+for (range in levels(df_clean$project_cost_range)) {
+  
+  # Filter the data for the current project cost range
+  filtered_df <- df_clean %>%
+    filter(project_cost_range == range) %>%
+    mutate(across(all_of(time_diff_vars), ~ ifelse(. < 0, NA, .)))
+  
+  # Gather data for plotting, excluding negative values
+  plot_data <- filtered_df %>%
+    select(all_of(time_diff_vars)) %>%
+    pivot_longer(everything(), names_to = "Stage", values_to = "Days") %>%
+    filter(!is.na(Days))
+  
+  # Set factor levels for Stage to match the order of time_diff_vars
+  plot_data$Stage <- factor(plot_data$Stage, levels = time_diff_vars)
+  
+  # Prepare summary points and ranges for plotting
+  summary_points <- plot_data %>%
+    group_by(Stage) %>%
+    summarize(
+      median = median(Days, na.rm = TRUE),
+      min = min(Days, na.rm = TRUE),
+      max = max(Days, na.rm = TRUE)
+    ) %>%
+    pivot_longer(cols = c(median, min, max), names_to = "statistic", values_to = "value") %>%
+    ungroup()  # Ensure ungrouped before plotting
+  
+  summary_ranges <- plot_data %>%
+    group_by(Stage) %>%
+    summarize(
+      min = min(Days, na.rm = TRUE),
+      max = max(Days, na.rm = TRUE)
+    ) %>%
+    ungroup()  # Ensure ungrouped before plotting
+  
+  # Example of specified points (replace with actual values if needed)
+  specified_points <- data.frame(
+    Stage = time_diff_vars,
+    specified_value = c(52, 730, 80, 7)  # Replace with actual specified points if needed
+  )
+  
+  # Plot using ggplot2 with horizontal line range graph and labels
+  plot <- ggplot() +
+    geom_linerange(data = summary_ranges, aes(y = Stage, xmin = min, xmax = max),
+                   size = 4.5, color = "gray", alpha = 1) +  # Adjusted line width
+    geom_point(data = summary_points %>% filter(statistic != "mean"), aes(y = Stage, x = value, color = statistic, shape = statistic),
+               size = 3) +  # Adjusted marker size
+    geom_point(data = specified_points, aes(y = Stage, x = specified_value, color = "Guidelines threshold", shape = "Guidelines threshold"),
+               size = 3) +  # Adjusted marker size
+    geom_text(data = summary_ranges, aes(y = Stage, x = max, label = round(max)),
+              hjust = -0.3, color = "black", size = 4) +
+    geom_text(data = specified_points, aes(y = Stage, x = specified_value, label = specified_value),
+              hjust = 1.3, color = "blue", size = 4) +
+    geom_text(data = summary_points %>% filter(statistic == "median"), 
+              aes(y = Stage, x = value, label = round(value)),
+              vjust = -1, color = "#2CA02C", size = 4) +  # Add labels above median points
+    scale_shape_manual(values = c("median" = 16, "Guidelines threshold" = 18)) +
+    scale_color_manual(values = c("median" = "#2CA02C", "Guidelines threshold" = "blue")) +
+    labs(y = "", x = "Number of Days", title = paste("Project Cost Range:", range)) +
+    scale_y_discrete(labels = custom_y_labels) +  # Custom y-axis labels
+    theme_classic(base_size = 10) +  # Adjusted base font size
+    theme(
+      axis.text.y = element_text(color = "black", size = 10),
+      axis.text.x = element_text(color = "black", size = 10),
+      axis.title = element_text(size = 8),
+      plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
+      legend.title = element_blank(),
+      legend.text = element_text(size = 10)
+    ) +
+    guides(
+      color = guide_legend(title = NULL),
+      shape = guide_legend(title = NULL)
+    )
+  
+  # Store the plot in the list
+  plot_list[[range]] <- plot
+}
+
+# Combine all plots into a 2x2 grid with the legend at the top
+combined_plot <- (plot_list[["Below 25 lakhs"]] | plot_list[["25-50 lakhs"]]) /
+                  (plot_list[["50 lakhs-1 crore"]] | plot_list[["Above 1 crore"]])
+
+# Combine all plots into a 2x2 grid with increased vertical spacing between rows
+plot_20 <- combined_plot +
+  plot_layout(
+    guides = "collect",  # Collect legends into a single legend
+    heights = c(1, 1.5)  # Adjust the height ratio between rows; increase the second value for more space
+  ) +
+  plot_annotation(
+    title = "Number of Days Between Major Stages by Project Cost Range"  # Overall title
+  )
+
+# Print the combined plot
+print(plot_20)
+
+# Save the plot to a file
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_20.png", 
+       plot = plot_20, width = 12, height = 10, dpi = 300)
+
+
+```
+
+
+
+#Plot 21: Days for bank sanctions for project sizes
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Define project cost ranges
+df_clean$project_cost_range <- cut(df_clean$project_cost,
+                                   breaks = c(0, 2500000, 5000000, 10000000, Inf),
+                                   labels = c("Below 25 lakhs", "25-50 lakhs", "50 lakhs-1 crore", "Above 1 crore"),
+                                   right = FALSE)
+
+
+
+# Calculate median and count of projects for each project cost range,
+# considering only non-NA values for both days_goahead_sanction and days_sanction_complete
+project_stats <- df_clean %>%
+  filter(!is.na(days_goahead_sanction) & !is.na(days_sanction_complete)) %>%  # Filter out rows where either value is NA
+  group_by(project_cost_range) %>%
+  summarize(
+    median_days_goahead_sanction = median(days_goahead_sanction, na.rm = TRUE),
+    count_projects = n(),
+    median_days_sanction_complete = median(days_sanction_complete, na.rm = TRUE)
+  )
+
+# Print the data frame
+print(project_stats)
+
+# Calculate median and count of projects for each project cost range,
+# considering only non-NA values for both days_goahead_sanction and days_sanction_complete
+project_stats <- df_clean %>%
+  filter(!is.na(days_goahead_sanction) & !is.na(days_sanction_complete)) %>%  # Filter out rows where either value is NA
+  group_by(project_cost_range) %>%
+  summarize(
+    median_days_goahead_sanction = median(days_goahead_sanction, na.rm = TRUE),
+    count_projects = n(),
+    median_days_sanction_complete = median(days_sanction_complete, na.rm = TRUE)
+  )
+
+# Reshape the data for plotting
+project_stats_long <- project_stats %>%
+  pivot_longer(cols = starts_with("median_days"),
+               names_to = "Variable",
+               values_to = "Median_Days")
+
+# Filter out NA values
+project_stats_long_clean <- project_stats_long %>%
+  filter(!is.na(project_cost_range) & !is.na(Median_Days))
+
+# Create the bar graph with the cleaned data
+plot_21 <- ggplot(project_stats_long_clean, aes(x = project_cost_range, y = Median_Days, fill = Variable)) +
+  geom_bar(stat = "identity", position = "dodge") +  # Use geom_bar to create the bar graph
+  geom_text(aes(label = round(Median_Days, 1)), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5,  # Position labels slightly above the bars
+            size = 3.5) +  # Size of the text labels
+  labs(
+    x = "Project Cost Range",
+    y = "Days",
+    title = "Median Days for Bank Loan Sanctions"
+  ) +
+  scale_fill_manual(values = c("median_days_goahead_sanction" = "#FF9999", "median_days_sanction_complete" = "lightblue"),
+                    labels = c("Go Ahead to Bank Sanction", "Bank Sanction to Completion")) +
+  theme_minimal(base_size = 10) +  # Use a minimal theme with a base font size
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5, size = 10),  # Horizontal x-axis labels with smaller size
+    axis.title = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.title = element_blank(),  # Remove legend title
+    legend.text = element_text(size = 10)
+  )
+
+
+# Save the plot to a file
+ggsave("C:\\Users\\Admin\\Box\\1. Agriculture Odisha\\5. MKUY\\8. Sanchit\\Dofiles\\Plots\\Plot_21.png", 
+       plot = plot_21, width = 12, height = 10, dpi = 300)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##
+
+
